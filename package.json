@@ -1,0 +1,23 @@
+{
+  "name": "tinyg.js",
+  "version": "0.0.1",
+  "description": "Node module for controlling TinyG.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": {
+    "name": "Rob Giseburt",
+    "email": "giseburt@gmail.com",
+    "url": "http://www.synthetos.com"
+  },
+  "main": "./tinyg",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/synthetos/tinyg-js.git"
+  },
+  "license": "GPL",
+  "dependencies": {
+    "serialport": "~1.1.1"
+  }
+}
