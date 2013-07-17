@@ -1,25 +1,137 @@
 var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 
+var spawn = require('child_process').spawn;
+
 var SerialPort = require("serialport").SerialPort;
 
 function TinyG(path) {
-  state = {};
+  var self = this;
+  var state = {};
+  this.state = state;
+
+  var configuration = {
+    sys: {},
+    get jv() { return this.sys.jv; },
+    set jv(x) { this.sys.jv = x;},
+
+    x: {
+      am: null,
+      vm: null,
+      fr: null,
+      tm: null,
+      jm: null,
+      jh: null,
+      jd: null,
+      sn: null,
+      sx: null,
+      sv: null,
+      lv: null,
+      lb: null,
+      zb: null,
+    },
+    get xam() { return this.x.am; },
+    set xam(x) { this.x.am = x; },
+  };
+  this.configuration = configuration;
+
+  var _merge = function (to, from) {
+    for (n in from) {
+      if (to[n] == null || typeof to[n] != 'object') {
+        to[n] = from[n];
+      } else if (typeof from[n] == 'object') {
+        to[n] = _merge(to[n], from[n]);
+      }
+    }
+
+    return to;
+  };
+
+  this._mergeIntoState = function(jsonObj) {
+    _merge(this.state, jsonObj);
+  };
+
+  this._mergeIntoConfiguration = function(jsonObj) {
+    _merge(this.configuration, jsonObj);
+  };
   
+  // Via http://werxltd.com/wp/2010/05/13/javascript-implementation-of-javas-string-hashcode-method/
+  // Thank you 
+  this.hashCode = function(s) {
+    var hash = 0,
+    strlen = s.length,
+    i,
+    c;
+    if ( strlen === 0 ) {
+      return hash;
+    }
+    for ( i = 0; i < strlen; i++ ) {
+      c = s.charCodeAt( i );
+      // hash = (31 * hash) + c;
+      hash = ((hash << 5) - hash) + c;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash;
+  };
+  
+  var jsObject;
   var readBuffer = "";  
   serialPort = new SerialPort(path, {
     baudrate: 115200,
+    flowcontrol: true,
     // Provide our own custom parser:
     parser: function (emitter, buffer) {
       // Collect data
       readBuffer += buffer.toString();
-      // Split collected data by delimiter
-      var parts = readBuffer.split(/(\r\n?|\n)+/)
+      
+      // Split collected data by line endings
+      var parts = readBuffer.split(/(\r\n?|\n)+/);
+      
+      // If there is leftover data, 
       readBuffer = parts.pop();
+      
       parts.forEach(function (part, i, array) {
+        // console.log('part: ' + part.replace(/([\x00-\x20])/, "*$1*"));
+        
         if (part[0] == "{") {
-          var jsObject = JSON.parse(part);
-          console.log('JSON: ' + JSON.stringify(jsObject['r']));
+          jsObject = JSON.parse(part);
+          
+          // We have to look in r/f for the footer due to a bug in TinyG...
+          var footer = jsObject['f'] || jsObject['r']['f'];
+          if (footer != null) {
+            /*
+             * Checksums are failing too often, then there's no sign of transmission errors...
+             * Bail on checksum checks for now...
+             
+            // To calculate the hash, we need to partially hand parse the part. We'll use a RegExp:
+            hashablePart = part.replace(/(,"f":\[[0-9.]+,[0-9.]+,[0-9.]+),[0-9.]+\]\}\}?/, "$1");
+            
+            console.log("hashablePart: '%s'", hashablePart);
+            
+            // See http://javascript.about.com/od/problemsolving/a/modulobug.htm for the weirness explained.
+            // Short form: javascript has a modulus bug.
+            checksum = (((self.hashCode(hashablePart) + 0) % 9999) + 9999) % 9999;
+            
+            if (checksum != footer[3])
+              console.error("ERROR: Checksum mismatch: (actual) %d != (reported) %d)", checksum, footer[3]);
+            */
+            
+            if (footer[1] != 0)
+              colsole.error("ERROR: TinyG reported a parser error: $d (based on %d bytes read and a checksum of %d)", footer[1], footer[2], footer[3]);
+
+            // Remove the object so it doesn't get parsed anymore
+            delete jsObject['f'];
+            delete jsObject['r']['f'];
+          }
+          
+          console.log(util.inspect(jsObject));
+          if (jsObject['r'].hasOwnProperty('sr'))
+            self._mergeIntoState(jsObject['r']);
+          else
+            self._mergeIntoConfiguration(jsObject['r']);
+
+          console.log("Conf: " + util.inspect(self.configuration));
+          console.log("Stat: " + util.inspect(self.state));
         } else if (!part.match(/^\s+$/)) {
           emitter.emit('data', part);
         }
@@ -28,15 +140,18 @@ function TinyG(path) {
   });
 
   serialPort.on("open", function () {
+    // spawn('/bin/stty', ['-f', path, 'crtscts']);
     serialPort.on('data', function(data) {
       console.log('data received: ' + data);
     });  
-    serialPort.write('{"jv" :4 }\n');//Set JSON verbosity to 4
+    serialPort.write('{"ee" : 0}\n');//Set echo off, it'll confuse the parser
+    serialPort.write('{"jv" : 4}\n');//Set JSON verbosity to 4
+
     serialPort.write('{"1"  :""}\n');//return motor 1 settings
     serialPort.write('{"2"  :""}\n');//
     serialPort.write('{"3"  :""}\n');//
     serialPort.write('{"4"  :""}\n');//
-    serialPort.write('{"x"  :""}\n');//return X axis settings
+    // serialPort.write('{"x"  :""}\n');//return X axis settings
     serialPort.write('{"y"  :""}\n');//
     serialPort.write('{"z"  :""}\n');//
     serialPort.write('{"a"  :""}\n');//
@@ -57,10 +172,17 @@ function TinyG(path) {
     serialPort.write('{"g92":""}\n');//return G92 offsets currently in effect
     serialPort.write('{"g28":""}\n');//return coordinate saved by G28 command
     serialPort.write('{"g30":""}\n');//return coordinate saved by G30 command
+
+    // Test merging
+    // serialPort.write('{"x":{"am":""}}\n');
+    serialPort.write('{"xam":""}\n');
+    serialPort.write('{"qr":""}\n');
+    serialPort.write('{"sr":""}\n');
+    serialPort.write('{"qr":""}\n');
+    serialPort.write('{"sr":""}\n');
+    // serialPort.write('{"g54":{"x":"0"}}\n');
   });
 
-  var self = this;
-  
   // Do stuff here.
 }
 
