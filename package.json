@@ -14,10 +14,10 @@
   "main": "./tinyg",
   "repository": {
     "type": "git",
-    "url": "git://github.com/synthetos/tinyg-js.git"
+    "url": "git://github.com/giseburt/TinyG-node.git"
   },
   "license": "GPL",
   "dependencies": {
-    "serialport": "~1.1.1"
+    "serialport": "git+ssh://git@github.com:giseburt/node-serialport.git"
   }
 }

@@ -10,28 +10,33 @@ function TinyG(path) {
   var state = {};
   this.state = state;
 
+  function Axis() {
+    this.am = null;
+    this.vm = null;
+    this.fr = null;
+    this.tm = null;
+    this.jm = null;
+    this.jh = null;
+    this.jd = null;
+    this.sn = null;
+    this.sx = null;
+    this.sv = null;
+    this.lv = null;
+    this.lb = null;
+    this.zb = null;
+  };
+
   var configuration = {
     sys: {},
     get jv() { return this.sys.jv; },
     set jv(x) { this.sys.jv = x;},
 
-    x: {
-      am: null,
-      vm: null,
-      fr: null,
-      tm: null,
-      jm: null,
-      jh: null,
-      jd: null,
-      sn: null,
-      sx: null,
-      sv: null,
-      lv: null,
-      lb: null,
-      zb: null,
-    },
+    x: new Axis(0),
     get xam() { return this.x.am; },
     set xam(x) { this.x.am = x; },
+
+    y: new Axis(),
+    z: new Axis(),
   };
   this.configuration = configuration;
 
@@ -174,7 +179,7 @@ function TinyG(path) {
     serialPort.write('{"g30":""}\n');//return coordinate saved by G30 command
 
     // Test merging
-    // serialPort.write('{"x":{"am":""}}\n');
+    serialPort.write('{"x":{"am":""}}\n');
     serialPort.write('{"xam":""}\n');
     serialPort.write('{"qr":""}\n');
     serialPort.write('{"sr":""}\n');
