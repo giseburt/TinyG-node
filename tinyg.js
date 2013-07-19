@@ -10,14 +10,57 @@ function TinyG(path) {
   var self = this;
   
   // Store the last sr
-  this.state = {};
+  this._state = {};
+  
+  // See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty
+  //  for a better explanation of Object.defineProperty.
+
+  /*
+   * We define getters and setters for "unit", that use the lengthMultiplier
+   * to cleanly make sure all internal measurements are in mm.
+   *
+   * This should only be called from _mergeIntoState, since it *does not* change the TinyG setting.
+   * This will be primrily called when a new status report (sr) comes in.
+   *
+   * On changing the value, an "unitChanged" event is emitted with the multiplier from mm as a parameter.
+   */
+
+  // self.state.unit returns with 0 for inches and 1 for mm, just like the TinyG JSON mode does.
+  Object.defineProperty(this._state, "unit", {
+    // We define the get/set keys, so this is an "accessor descriptor".
+    get: function() { return self.lengthMultiplier == 25.4 ? 0 : 1; },
+    set: function(newUnit) {
+      var oldLM = self.lengthMultiplier;
+      self.lengthMultiplier = (newUnit == 0 ? 25.4 : 1);
+
+      if (self.lengthMultiplier != oldLM)
+        self.emit("unitChanged", self.lengthMultiplier);
+    },
+    configurable : true, // We *can* delete this property. I don't know why though.
+    enumerable : true // We want this one to show up in enumeration lists.
+  });
+
+  // self.state.unitMultiplier returns with the multiplier from mm, which is 1 for mm mode and 25.4 for inches mode.
+  Object.defineProperty(this._state, "unitMultiplier", {
+    // We define the get/set keys, so this is an "accessor descriptor".
+    get: function() { return self.lengthMultiplier; },
+    set: function(newUnitMultiplier) {
+      if (newUnitMultiplier == 1 || newUnitMultiplier == 25.4) {
+        var oldLM = self.lengthMultiplier;
+        self.lengthMultiplier = newUnitMultiplier;
+
+        if (self.lengthMultiplier != oldLM)
+          self.emit("unitChanged", self.lengthMultiplier);
+      }
+    },
+    configurable : true, // We *can* delete this property. I don't know why though.
+    enumerable : true // We want this one to show up in enumeration lists.
+  });
   
   // Store all of the config data
-  this.configuration = {};
+  this._configuration = {};
   
-  this.lengthMultiplier = 1; // this should be either 1 (mm) or 25.4 (inches)
-
-  var _setupSchema = function (subconfig, subschema, breadcrumbs) {
+  function _setupConfigSchema(subconfig, subschema, breadcrumbs) {
     var aliasMap = null;
     for (n in subschema) {
       if (n == "_aliasMap") {
@@ -37,7 +80,7 @@ function TinyG(path) {
         subconfig[n] = {};
         // recurse
         breadcrumbs.push(n);
-        _setupSchema(subconfig[n], subschema[n], breadcrumbs);
+        _setupConfigSchema(subconfig[n], subschema[n], breadcrumbs);
         breadcrumbs.pop();
       } else {
         // Normalize v to always be an array...
@@ -52,90 +95,162 @@ function TinyG(path) {
 
         // Is this a length?
         if (v[0] == "length") {
-          // See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty
-          //  for a better explanation of what's happening here.
-          
-          // We squirrel away the actual value in _n
-          Object.defineProperty(subconfig, "_"+n, {
-            value: null, // We give this a value, so it's a "data descriptor".
-            writable : true,
-            configurable : true,
-            enumerable : false
-          });
-          
-          /*
-           * We define getters and setters for n, that use the lengthMultiplier
-           * to cleanly make sure all internal measurements are in mm.
-           */
-          
-          Object.defineProperty(subconfig, n, {
-            // We define the get/set keys, so this is an "accessor descriptor".
-            get: function() { return subconfig["_"+n] / self.lengthMultiplier; },
-            set: function(newLength) { subconfig["_"+n] = newLength * self.lengthMultiplier; },
-            configurable : true, // We *can* delete this property. I don't know why though.
-            enumerable : true // We want this one to show up in enumeration lists.
-          });
+          // We need to force a new context, and for..in doesn't do that.
+          // So we make a new function, and then call it immediately.
+          (function(subconfig, n, newN) {
+            
+            // See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty
+            //  for a better explanation of what's happening here.
+
+            // We squirrel away the actual value in _n
+            Object.defineProperty(subconfig, newN, {
+              value: null, // We give this a value, so it's a "data descriptor".
+              writable : true,
+              configurable : true,
+              enumerable : false
+            });
+
+            /*
+             * We define getters and setters for n, that use the lengthMultiplier
+             * to cleanly make sure all internal measurements are in mm.
+             */
+
+            Object.defineProperty(subconfig, n, {
+              // We define the get/set keys, so this is an "accessor descriptor".
+              get: function() { return subconfig[newN] / self.lengthMultiplier; },
+              set: function(newLength) { subconfig[newN] = newLength * self.lengthMultiplier; },
+              configurable : true, // We *can* delete this property. I don't know why though.
+              enumerable : true // We want this one to show up in enumeration lists.
+            });
+
+          })(subconfig, n, "_"+n);
         }
 
       } // (is object) else
       
     } // for (n in subschema)
     
-    if (aliasMap == "*") {
-      // We only support "*" type aliasMaps right now...
+    if (aliasMap != null && aliasMap.match(/^[\*\%]$/)) {
+      // We only support "*" or "%" type aliasMaps right now...
 
       /*
       * if breadcrumbs = ['x']
       * and subschema has a key 'vm'
-      * them we make configuration['xvm'] a getter and setter for configuration['x']['vm']
+      * them we make configuration['xvm'] (for "*") or configuration['vm'] (for "%")
+      * a getter and setter for configuration['x']['vm']
       */
 
-      var prefixKey = breadcrumbs.join('');
+      var prefixKey = null;
+      
+      if (aliasMap == "*") {
+        prefixKey = breadcrumbs.join('');
+      } else if (aliasMap == "%") {
+        prefixKey = "";
+      }
+      
+      aliasesToBaseString = breadcrumbs.join('/');
+      
       for (n in subschema) {
         if (n.match(/^_/))
           continue;
-
-        console.log("Creating alias %s", prefixKey+n);
         
-        // var key = n;
-        var value = subconfig[n];
-        Object.defineProperty(self.configuration, prefixKey+n, {
-          // We define the get/set keys, so this is an "accessor descriptor".
-          get: function() { return value; },
-          set: function(newValue) { value = newValue; },
-          configurable : true, // We *can* delete this property. I don't know why though.
-          enumerable : false // We *don't* want this alias to show up in enumeration lists.
-        });
+        // We need to force a new context, and for..in doesn't do that.
+        // So we make a new function, and then call it immediately.
+        (function(conf, subconfig, valueKey, aliasKey, aliasesToString) {
+
+          Object.defineProperty(conf, aliasKey, {
+            // We define the get/set keys, so this is an "accessor descriptor".
+            get: function() {
+              // console.log("Alias getter %s called for %s", aliasKey, valueKey);
+              return subconfig[valueKey];
+            },
+            set: function(newValue) {
+              // console.log("Alias setter %s called for %s", aliasKey, valueKey);
+              subconfig[valueKey] = newValue;
+            },
+            configurable : true, // We *can* delete this property. I don't know why though.
+            enumerable : false // We *don't* want this alias to show up in enumeration lists.
+          });
+          
+          Object.defineProperty(conf, aliasKey+"/aliasesTo", {
+            // We define the get/set keys, so this is an "accessor descriptor".
+            value: aliasesToString,
+            configurable : true, // We *can* delete this property. I don't know why though.
+            enumerable : false // We *don't* want this alias to show up in enumeration lists.
+          });
+          
+        })(self._configuration, subconfig, n, prefixKey+n, [aliasesToBaseString, n].join('/'));
+        
       }; // for (n in subschema) (for aliasMap)
     } // if (aliasMap...
   };
 
   try {
-    var schema = require('./schema.json');
+    var schema = require('./configSchema.json');
     
-    _setupSchema(this.configuration, schema);
+    _setupConfigSchema(this._configuration, schema);
   } catch(err) {
     self.emit('error', err);
   }
 
-  var _merge = function (to, from) {
-    for (n in from) {
+  var _merge = function (changed, to, from, changedRoot) {
+    if (changedRoot == undefined) {
+      changedRoot = changed;
+    }
+
+    for (var n in from) {
       if (to[n] == null || typeof to[n] != 'object') {
+        // If the value changed, record it in the changed object
+        if (to[n] != from[n]) {
+          
+          if (to[n+"/aliasesTo"] != undefined) {
+            var aliasMapFromRoot = to[n+"/aliasesTo"].split("/");
+            var c = changedRoot;
+            var key = null;
+            while (aliasMapFromRoot.length > 1) {
+              key = aliasMapFromRoot.shift();
+              if (c[key] == undefined) {
+                c[key] = {};
+              }
+              c = c[key];
+            } // while
+            key = aliasMapFromRoot.shift();
+            c[key] = from[n];
+          } else {
+            changed[n] = from[n];
+          }
+          
+        } // to != from
+
+        // set the value, the mapping applies here
         to[n] = from[n];
       } else if (typeof from[n] == 'object') {
-        to[n] = _merge(to[n], from[n]);
-      }
-    }
+        if (changed[n] == undefined) {
+          changed[n] = {};
+        }
+        
+        to[n] = _merge(changed[n], to[n], from[n], changedRoot);
+
+        // if the new object ended up empty, delete it
+        if (changed[n] != undefined && Object.keys(changed[n]).length == 0) {
+          delete changed[n];
+        }
+      } // if (is not object) ... else
+    } // for (n in from)
 
     return to;
   };
 
   this._mergeIntoState = function(jsonObj) {
-    _merge(this.state, jsonObj);
+    var changed = {};
+    _merge(changed, this._state, jsonObj);
+    return changed;
   };
 
   this._mergeIntoConfiguration = function(jsonObj) {
-    _merge(this.configuration, jsonObj);
+    var changed = {};
+    _merge(changed, this._configuration, jsonObj);
+    return changed;
   };
   
   // Via http://werxltd.com/wp/2010/05/13/javascript-implementation-of-javas-string-hashcode-method/
@@ -162,13 +277,18 @@ function TinyG(path) {
     readBuffer += buffer.toString();
     
     // Split collected data by line endings
-    var parts = readBuffer.split(/(\r\n?|\n)+/);
+    var parts = readBuffer.split(/(\r\n|\r|\n)+/);
     
     // If there is leftover data, 
     readBuffer = parts.pop();
     
     parts.forEach(function (part, i, array) {
-      console.log('part: ' + part.replace(/([\x00-\x20])/, "*$1*"));
+      // Cleanup and remove blank or all-whitespace lines.
+      if (part.match(/^\s*$/))
+        return;
+      
+      // console.log('part: ' + part.replace(/([\x00-\x20])/, "*$1*"));
+      emitter.emit('data', part);
       
       if (part[0] == "\{" /* make the IDE happy: } */) {
         jsObject = JSON.parse(part);
@@ -202,16 +322,22 @@ function TinyG(path) {
           delete jsObject['r']['f'];
         }
         
-        console.log(util.inspect(jsObject));
-        if (jsObject['r'].hasOwnProperty('sr'))
-          self._mergeIntoState(jsObject['r']);
-        else
-          self._mergeIntoConfiguration(jsObject['r']);
+        // console.log(util.inspect(jsObject));
+        if (jsObject['r'].hasOwnProperty('sr')) {
+          var changed = self._mergeIntoState(jsObject['r']);
+          if (Object.keys(changed).length > 0) {
+            self.emit("stateChanged", changed);
+          }
+        }
+        else {
+          var changed = self._mergeIntoConfiguration(jsObject['r']);
+          if (Object.keys(changed).length > 0) {
+            self.emit("configChanged", changed);
+          }
+        }
 
-        console.log("Conf: " + JSON.stringify(self.configuration));
-        // console.log("Stat: " + util.inspect(self.state));
-      } else if (!part.match(/^\s+$/)) {
-        emitter.emit('data', part);
+        // console.log("Conf: " + JSON.stringify(self._configuration));
+        // console.log("Stat: " + util.inspect(self._state));
       }
     } // parts.forEach function
     ); // parts.forEach
@@ -231,16 +357,16 @@ function TinyG(path) {
   serialPort.on("open", function () {
     // spawn('/bin/stty', ['-f', path, 'crtscts']);
     serialPort.on('data', function(data) {
-      console.log('data received: ' + data);
+      self.emit("data", data);
     });  
     serialPort.write('{"ee" : 0}\n');//Set echo off, it'll confuse the parser
     serialPort.write('{"jv" : 4}\n');//Set JSON verbosity to 4
-
+    
     serialPort.write('{"1"  :""}\n');//return motor 1 settings
     serialPort.write('{"2"  :""}\n');//
     serialPort.write('{"3"  :""}\n');//
     serialPort.write('{"4"  :""}\n');//
-    // serialPort.write('{"x"  :""}\n');//return X axis settings
+    serialPort.write('{"x"  :""}\n');//return X axis settings
     serialPort.write('{"y"  :""}\n');//
     serialPort.write('{"z"  :""}\n');//
     serialPort.write('{"a"  :""}\n');//
@@ -263,13 +389,10 @@ function TinyG(path) {
     serialPort.write('{"g30":""}\n');//return coordinate saved by G30 command
 
     // Test merging
-    // serialPort.write('{"x":{"am":""}}\n');
+    serialPort.write('{"x":{"am":""}}\n');
     serialPort.write('{"xam":""}\n');
-    serialPort.write('{"qr":""}\n');
     serialPort.write('{"sr":""}\n');
-    serialPort.write('{"qr":""}\n');
-    serialPort.write('{"sr":""}\n');
-    // serialPort.write('{"g54":{"x":"0"}}\n');
+    serialPort.write('{"g54":{"x":100}}\n');
   });
 
   // Do stuff here.

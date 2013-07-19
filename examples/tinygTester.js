@@ -4,6 +4,7 @@
 
 var TinyG = require("../").TinyG;
 var optimist = require('serialport/node_modules/optimist');
+var util = require('util');
 
 var args = optimist
   .alias('h', 'help')
@@ -50,3 +51,14 @@ if (!args.portname) {
 
 var tinyg = new TinyG(args.portname);
 
+tinyg.on('data', function(data) {
+  // console.log('#### data received: ' + data);
+});
+
+tinyg.on('stateChanged', function(changed) {
+  console.log("State changed: " + util.inspect(changed));
+});
+
+tinyg.on('configChanged', function(changed) {
+  console.log("Config changed: " + util.inspect(changed));
+});
