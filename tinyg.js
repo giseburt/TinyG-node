@@ -2,15 +2,18 @@ var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 
 var spawn = require('child_process').spawn;
-
 var SerialPort = require("serialport").SerialPort;
 
-function TinyG(path) {
+function TinyG(path, openImmediately) {
   // Squirrel away a ref to 'this' for use in callbacks.
   var self = this;
   
+  //predefine
+  var serialPort;
+  
   // Store the last sr
   this._state = {};
+  this._lengthMultiplier = 1;
   
   // See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty
   //  for a better explanation of Object.defineProperty.
@@ -28,13 +31,13 @@ function TinyG(path) {
   // self.state.unit returns with 0 for inches and 1 for mm, just like the TinyG JSON mode does.
   Object.defineProperty(this._state, "unit", {
     // We define the get/set keys, so this is an "accessor descriptor".
-    get: function() { return self.lengthMultiplier == 25.4 ? 0 : 1; },
+    get: function() { return self._lengthMultiplier == 25.4 ? 0 : 1; },
     set: function(newUnit) {
-      var oldLM = self.lengthMultiplier;
-      self.lengthMultiplier = (newUnit == 0 ? 25.4 : 1);
+      var oldLM = self._lengthMultiplier;
+      self._lengthMultiplier = (newUnit == 0 ? 25.4 : 1);
 
-      if (self.lengthMultiplier != oldLM)
-        self.emit("unitChanged", self.lengthMultiplier);
+      if (self._lengthMultiplier != oldLM)
+        self.emit("unitChanged", self._lengthMultiplier);
     },
     configurable : true, // We *can* delete this property. I don't know why though.
     enumerable : true // We want this one to show up in enumeration lists.
@@ -43,14 +46,14 @@ function TinyG(path) {
   // self.state.unitMultiplier returns with the multiplier from mm, which is 1 for mm mode and 25.4 for inches mode.
   Object.defineProperty(this._state, "unitMultiplier", {
     // We define the get/set keys, so this is an "accessor descriptor".
-    get: function() { return self.lengthMultiplier; },
+    get: function() { return self._lengthMultiplier; },
     set: function(newUnitMultiplier) {
       if (newUnitMultiplier == 1 || newUnitMultiplier == 25.4) {
-        var oldLM = self.lengthMultiplier;
-        self.lengthMultiplier = newUnitMultiplier;
+        var oldLM = self._lengthMultiplier;
+        self._lengthMultiplier = newUnitMultiplier;
 
-        if (self.lengthMultiplier != oldLM)
-          self.emit("unitChanged", self.lengthMultiplier);
+        if (self._lengthMultiplier != oldLM)
+          self.emit("unitChanged", self._lengthMultiplier);
       }
     },
     configurable : true, // We *can* delete this property. I don't know why though.
@@ -60,7 +63,7 @@ function TinyG(path) {
   // Store all of the config data
   this._configuration = {};
   
-  function _setupConfigSchema(subconfig, subschema, breadcrumbs) {
+  function _setupConfigSchema(subconfig, subschema, subself, breadcrumbs) {
     var aliasMap = null;
     for (n in subschema) {
       if (n == "_aliasMap") {
@@ -78,14 +81,17 @@ function TinyG(path) {
       // This means a
       if (typeof subschema[n] == 'object' && !Array.isArray(subschema[n])) {
         subconfig[n] = {};
+        subself[n] = {};
+        
         // recurse
         breadcrumbs.push(n);
-        _setupConfigSchema(subconfig[n], subschema[n], breadcrumbs);
+        _setupConfigSchema(subconfig[n], subschema[n], subself[n], breadcrumbs);
         breadcrumbs.pop();
       } else {
         // Normalize v to always be an array...
-        if (!Array.isArray(v))
-          v = [v];
+        if (!Array.isArray(v)) {
+          v = [v];        
+        }
         
         // Is this a normal value
         if (v[0] == "number" || v[0] == "string") {
@@ -101,10 +107,10 @@ function TinyG(path) {
             
             // See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty
             //  for a better explanation of what's happening here.
-
+            
             // We squirrel away the actual value in _n
             Object.defineProperty(subconfig, newN, {
-              value: null, // We give this a value, so it's a "data descriptor".
+              value: undefined, // We give this a value, so it's a "data descriptor".
               writable : true,
               configurable : true,
               enumerable : false
@@ -114,17 +120,78 @@ function TinyG(path) {
              * We define getters and setters for n, that use the lengthMultiplier
              * to cleanly make sure all internal measurements are in mm.
              */
-
             Object.defineProperty(subconfig, n, {
               // We define the get/set keys, so this is an "accessor descriptor".
-              get: function() { return subconfig[newN] / self.lengthMultiplier; },
-              set: function(newLength) { subconfig[newN] = newLength * self.lengthMultiplier; },
+              get: function() {
+                // console.log("Get Length of key[%s]:", newN, sub[newN]);
+                return subconfig[newN] == undefined ? undefined : subconfig[newN] / self._lengthMultiplier;
+              },
+              set: function(newLength) {
+                // console.log("Set Length of key[%s] (lm: %d):", newN, self._lengthMultiplier, newLength);
+                subconfig[newN] = newLength * self._lengthMultiplier;
+              },
               configurable : true, // We *can* delete this property. I don't know why though.
               enumerable : true // We want this one to show up in enumeration lists.
             });
 
           })(subconfig, n, "_"+n);
-        }
+        } // "length"
+        else
+        if (v[0] == "unit") {
+          // We need to force a new context, and for..in doesn't do that.
+          // So we make a new function, and then call it immediately.
+          (function(subconfig, n, newN) {
+            /*
+             * We define getters and setters for n, that use the lengthMultiplier
+             * to cleanly make sure all internal measurements are in mm.
+             */
+            Object.defineProperty(subconfig, n, {
+              // We define the get/set keys, so this is an "accessor descriptor".
+              get: function() { return self._lengthMultiplier == 25.4 ? 0 : 1; },
+              set: function(newUnit) {
+                var oldLM = self._lengthMultiplier;
+                self._lengthMultiplier = (newUnit == 0 ? 25.4 : 1);
+
+                if (self._lengthMultiplier != oldLM)
+                  self.emit("unitChanged", self._lengthMultiplier);
+              },
+              configurable : true, // We *can* delete this property. I don't know why though.
+              enumerable : true // We want this one to show up in enumeration lists.
+            });
+
+          })(subconfig, n, "_"+n);
+        } // "length"
+        
+        
+        // For all values, create a setter and getter on self
+        (function(subself, subconfig, n) {
+          var request = {};
+          var r = request;
+          breadcrumbs.forEach(function(key){
+            r[key] = {};
+            r = r[key];
+          })
+          r[n]="";
+
+          Object.defineProperty(subself, n, {
+            // We define the get/set keys, so this is an "accessor descriptor".
+            get: function() {
+              // console.log("Get:", JSON.stringify(request));
+              serialPort.write(JSON.stringify(request) + "\n");
+              
+              // return the stale version
+              return subconfig[n];
+            },
+            set: function(newvalue) {
+              r[n]=newvalue;
+              // console.log("Set:", JSON.stringify(request));
+              serialPort.write(JSON.stringify(request) + "\n");
+            },
+            configurable : true, // We *can* delete this property. I don't know why though.
+            enumerable : true // We want this one to show up in enumeration lists.
+          });
+        })(subself, subconfig, n);
+        
 
       } // (is object) else
       
@@ -156,8 +223,22 @@ function TinyG(path) {
         
         // We need to force a new context, and for..in doesn't do that.
         // So we make a new function, and then call it immediately.
-        (function(conf, subconfig, valueKey, aliasKey, aliasesToString) {
+        (function(conf, subconfig, valueKey, aliasKey, aliasesToString, subself) {
 
+          var request = {};
+          var r = request;
+          // This is the way it *should* work:
+          /*
+          breadcrumbs.forEach(function(key){
+            r[key] = {};
+            r = r[key];
+          })
+          r[valueKey]="";
+          */
+
+          // Due to a bug in TinyG <= 380.2, I have to set with the alias key itself.
+          r[aliasKey]="";
+          
           Object.defineProperty(conf, aliasKey, {
             // We define the get/set keys, so this is an "accessor descriptor".
             get: function() {
@@ -178,8 +259,30 @@ function TinyG(path) {
             configurable : true, // We *can* delete this property. I don't know why though.
             enumerable : false // We *don't* want this alias to show up in enumeration lists.
           });
+
+          // For all values, create a setter and getter on self -- the TinyG object
+          Object.defineProperty(self, aliasKey, {
+            // We define the get/set keys, so this is an "accessor descriptor".
+            get: function() {
+              console.log("Get alias:", JSON.stringify(request), " aliasKey:", aliasKey);
+              serialPort.write(JSON.stringify(request) + "\n");
+              
+              // return the stale version
+              return subconfig[aliasKey];
+            },
+            set: function(newValue) {
+              // r[valueKey]=newValue;
+              r[aliasKey]=newValue;
+              
+              console.log("Set alias:", JSON.stringify(request));
+              serialPort.write(JSON.stringify(request) + "\n");
+            },
+            configurable : true, // We *can* delete this property. I don't know why though.
+            enumerable : true // We want this one to show up in enumeration lists.
+          });
           
-        })(self._configuration, subconfig, n, prefixKey+n, [aliasesToBaseString, n].join('/'));
+        })(self._configuration, subconfig, n, prefixKey+n, [aliasesToBaseString, n].join('/'), subself);
+        
         
       }; // for (n in subschema) (for aliasMap)
     } // if (aliasMap...
@@ -188,7 +291,7 @@ function TinyG(path) {
   try {
     var schema = require('./configSchema.json');
     
-    _setupConfigSchema(this._configuration, schema);
+    _setupConfigSchema(this._configuration, schema, self);
   } catch(err) {
     self.emit('error', err);
   }
@@ -314,7 +417,7 @@ function TinyG(path) {
           */
           
           if (footer[1] != 0) {
-            colsole.error("ERROR: TinyG reported a parser error: $d (based on %d bytes read and a checksum of %d)", footer[1], footer[2], footer[3]);
+            console.error("ERROR: TinyG reported a parser error: %d (based on %d bytes read and a checksum of %d)", footer[1], footer[2], footer[3]);
           }
           
           // Remove the object so it doesn't get parsed anymore
@@ -351,17 +454,25 @@ function TinyG(path) {
     flowcontrol: true,
     // Provide our own custom parser:
     parser: _tinygParser
-    }
+    },
+    openImmediately
   );
+  
+  this.serialPort = serialPort;
 
   serialPort.on("open", function () {
     // spawn('/bin/stty', ['-f', path, 'crtscts']);
     serialPort.on('data', function(data) {
       self.emit("data", data);
-    });  
-    serialPort.write('{"ee" : 0}\n');//Set echo off, it'll confuse the parser
-    serialPort.write('{"jv" : 4}\n');//Set JSON verbosity to 4
+    });
     
+    self.ex = 2;
+    self.ee = 0;
+    self.jv = 5;
+    
+    // serialPort.write('{"ee" : 0}\n');//Set echo off, it'll confuse the parser
+    // serialPort.write('{"jv" : 4}\n');//Set JSON verbosity to 4
+    serialPort.write('{"sr" :""}\n');//return motor 1 settings
     serialPort.write('{"1"  :""}\n');//return motor 1 settings
     serialPort.write('{"2"  :""}\n');//
     serialPort.write('{"3"  :""}\n');//
@@ -388,16 +499,39 @@ function TinyG(path) {
     serialPort.write('{"g28":""}\n');//return coordinate saved by G28 command
     serialPort.write('{"g30":""}\n');//return coordinate saved by G30 command
 
-    // Test merging
-    serialPort.write('{"x":{"am":""}}\n');
-    serialPort.write('{"xam":""}\n');
-    serialPort.write('{"sr":""}\n');
-    serialPort.write('{"g54":{"x":100}}\n');
+    self.emit('open');
+  });
+  
+  serialPort.on("error", function(err) {
+    self.emit("error", err);
   });
 
-  // Do stuff here.
+  Object.defineProperty(this, "configuration", {
+    get: function() { return self._configuration; },
+    // Setter? There's no setter...
+    configurable : true, // We *can* delete this property. I don't know why though.
+    enumerable : true // We want this one to show up in enumeration lists.
+  });
 };
 
+
 util.inherits(TinyG, EventEmitter);
+
+TinyG.prototype.open = function (callback) {
+  var self = this;
+  self.serialPort.open(callback);
+  // if (callback) { callback(); }
+};
+
+TinyG.prototype.close = function() {
+  var self = this;
+  self.serialPort.close();
+};
+
+TinyG.prototype.write = function(buffer, callback) {
+  var self = this;
+  self.serialPort.write(buffer, callback);
+};
+
 
 module.exports.TinyG = TinyG;

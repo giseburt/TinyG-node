@@ -49,16 +49,25 @@ if (!args.portname) {
   return process.exit(-1);
 }
 
-var tinyg = new TinyG(args.portname);
+var tinyg = new TinyG(args.portname, false);
 
-tinyg.on('data', function(data) {
-  // console.log('#### data received: ' + data);
+tinyg.open(function() {
+  tinyg.on('data', function(data) {
+    console.log('#### data received: ' + data);
+  });
+
+  tinyg.on('stateChanged', function(changed) {
+    console.log("State changed: " + util.inspect(changed));
+  });
+
+  tinyg.on('configChanged', function(changed) {
+    console.log("Config changed: " + util.inspect(changed));
+  });
 });
 
-tinyg.on('stateChanged', function(changed) {
-  console.log("State changed: " + util.inspect(changed));
-});
-
-tinyg.on('configChanged', function(changed) {
-  console.log("Config changed: " + util.inspect(changed));
+tinyg.on('open', function(data) {
+  // console.log('#### open');
+  // console.log('sys/ex: ' + util.inspect(tinyg.ex));
+  
+  setTimeout(function() { console.log('timeout all config: ' + JSON.stringify(tinyg.configuration)); }, 2000);
 });
