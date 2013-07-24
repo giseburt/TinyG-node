@@ -150,7 +150,7 @@ function TinyG(path, openImmediately) {
               get: function() { return self._lengthMultiplier == 25.4 ? 0 : 1; },
               set: function(newUnit) {
                 var oldLM = self._lengthMultiplier;
-                self._lengthMultiplier = (newUnit == 0 ? 25.4 : 1);
+                self._lengthMultiplier = (newUnit === 0 ? 25.4 : 1);
 
                 if (self._lengthMultiplier != oldLM)
                   self.emit("unitChanged", self._lengthMultiplier);
@@ -541,9 +541,14 @@ TinyG.prototype.close = function() {
   self.serialPort.close();
 };
 
-TinyG.prototype.write = function(buffer, callback) {
+TinyG.prototype.write = function(value, callback) {
   var self = this;
-  self.serialPort.write(buffer, callback);
+  
+  if (typeof value !== "string") {
+      self.serialPort.write(JSON.stringify(value) + '\n', callback);
+  } else {
+      self.serialPort.write(value, callback);
+  }
 };
 
 
