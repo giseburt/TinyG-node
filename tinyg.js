@@ -1,7 +1,7 @@
 var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 
-var spawn = require('child_process').spawn;
+//var spawn = require('child_process').spawn;
 var SerialPort = require("serialport").SerialPort;
 
 function TinyG(path, openImmediately) {
@@ -34,7 +34,7 @@ function TinyG(path, openImmediately) {
     get: function() { return self._lengthMultiplier == 25.4 ? 0 : 1; },
     set: function(newUnit) {
       var oldLM = self._lengthMultiplier;
-      self._lengthMultiplier = (newUnit == 0 ? 25.4 : 1);
+      self._lengthMultiplier = (newUnit === 0 ? 25.4 : 1);
 
       if (self._lengthMultiplier != oldLM)
         self.emit("unitChanged", self._lengthMultiplier);
@@ -65,15 +65,15 @@ function TinyG(path, openImmediately) {
   
   function _setupConfigSchema(subconfig, subschema, subself, breadcrumbs) {
     var aliasMap = null;
-    for (n in subschema) {
+    for (var n in subschema) {
       if (n == "_aliasMap") {
-        aliasMap = subschema["_aliasMap"];
+        aliasMap = subschema._aliasMap;
         continue;
       }
       
       var v = subschema[n];
       
-      if (breadcrumbs == undefined) {
+      if (breadcrumbs === undefined) {
         breadcrumbs = [];
       }
       
@@ -124,7 +124,7 @@ function TinyG(path, openImmediately) {
               // We define the get/set keys, so this is an "accessor descriptor".
               get: function() {
                 // console.log("Get Length of key[%s]:", newN, sub[newN]);
-                return subconfig[newN] == undefined ? undefined : subconfig[newN] / self._lengthMultiplier;
+                return subconfig[newN] === undefined ? undefined : subconfig[newN] / self._lengthMultiplier;
               },
               set: function(newLength) {
                 // console.log("Set Length of key[%s] (lm: %d):", newN, self._lengthMultiplier, newLength);
@@ -140,7 +140,7 @@ function TinyG(path, openImmediately) {
         if (v[0] == "unit") {
           // We need to force a new context, and for..in doesn't do that.
           // So we make a new function, and then call it immediately.
-          (function(subconfig, n, newN) {
+          (function(subconfig, n) {
             /*
              * We define getters and setters for n, that use the lengthMultiplier
              * to cleanly make sure all internal measurements are in mm.
@@ -159,7 +159,7 @@ function TinyG(path, openImmediately) {
               enumerable : true // We want this one to show up in enumeration lists.
             });
 
-          })(subconfig, n, "_"+n);
+          })(subconfig, n);
         } // "length"
         
         
@@ -170,7 +170,7 @@ function TinyG(path, openImmediately) {
           breadcrumbs.forEach(function(key){
             r[key] = {};
             r = r[key];
-          })
+          });
           r[n]="";
 
           Object.defineProperty(subself, n, {
@@ -197,7 +197,7 @@ function TinyG(path, openImmediately) {
       
     } // for (n in subschema)
     
-    if (aliasMap != null && aliasMap.match(/^[\*\%]$/)) {
+    if (aliasMap !== null && aliasMap.match(/^[\*\%]$/)) {
       // We only support "*" or "%" type aliasMaps right now...
 
       /*
@@ -215,7 +215,7 @@ function TinyG(path, openImmediately) {
         prefixKey = "";
       }
       
-      aliasesToBaseString = breadcrumbs.join('/');
+      var aliasesToBaseString = breadcrumbs.join('/');
       
       for (n in subschema) {
         if (n.match(/^_/))
@@ -223,7 +223,7 @@ function TinyG(path, openImmediately) {
         
         // We need to force a new context, and for..in doesn't do that.
         // So we make a new function, and then call it immediately.
-        (function(conf, subconfig, valueKey, aliasKey, aliasesToString, subself) {
+        (function(conf, subconfig, valueKey, aliasKey, aliasesToString) {
 
           var request = {};
           var r = request;
@@ -281,12 +281,12 @@ function TinyG(path, openImmediately) {
             enumerable : true // We want this one to show up in enumeration lists.
           });
           
-        })(self._configuration, subconfig, n, prefixKey+n, [aliasesToBaseString, n].join('/'), subself);
+        })(self._configuration, subconfig, n, prefixKey+n, [aliasesToBaseString, n].join('/'));
         
         
-      }; // for (n in subschema) (for aliasMap)
+      } // for (n in subschema) (for aliasMap)
     } // if (aliasMap...
-  };
+  }
 
   try {
     var schema = require('./configSchema.json');
@@ -297,22 +297,22 @@ function TinyG(path, openImmediately) {
   }
 
   var _merge = function (changed, to, from, changedRoot) {
-    if (changedRoot == undefined) {
+    if (changedRoot === undefined) {
       changedRoot = changed;
     }
 
     for (var n in from) {
-      if (to[n] == null || typeof to[n] != 'object') {
+      if (to[n] === null || typeof to[n] != 'object') {
         // If the value changed, record it in the changed object
         if (to[n] != from[n]) {
           
-          if (to[n+"/aliasesTo"] != undefined) {
+          if (to[n+"/aliasesTo"] !== undefined) {
             var aliasMapFromRoot = to[n+"/aliasesTo"].split("/");
             var c = changedRoot;
             var key = null;
             while (aliasMapFromRoot.length > 1) {
               key = aliasMapFromRoot.shift();
-              if (c[key] == undefined) {
+              if (c[key] === undefined) {
                 c[key] = {};
               }
               c = c[key];
@@ -328,14 +328,14 @@ function TinyG(path, openImmediately) {
         // set the value, the mapping applies here
         to[n] = from[n];
       } else if (typeof from[n] == 'object') {
-        if (changed[n] == undefined) {
+        if (changed[n] === undefined) {
           changed[n] = {};
         }
         
         to[n] = _merge(changed[n], to[n], from[n], changedRoot);
 
         // if the new object ended up empty, delete it
-        if (changed[n] != undefined && Object.keys(changed[n]).length == 0) {
+        if (changed[n] !== undefined && Object.keys(changed[n]).length === 0) {
           delete changed[n];
         }
       } // if (is not object) ... else
@@ -375,7 +375,7 @@ function TinyG(path, openImmediately) {
     return hash;
   };
   
-  _tinygParser = function (emitter, buffer) {
+  var _tinygParser = function (emitter, buffer) {
     // Collect data
     readBuffer += buffer.toString();
     
@@ -385,7 +385,7 @@ function TinyG(path, openImmediately) {
     // If there is leftover data, 
     readBuffer = parts.pop();
     
-    parts.forEach(function (part, i, array) {
+    parts.forEach(function (part) {
       // Cleanup and remove blank or all-whitespace lines.
       if (part.match(/^\s*$/))
         return;
@@ -393,12 +393,12 @@ function TinyG(path, openImmediately) {
       // console.log('part: ' + part.replace(/([\x00-\x20])/, "*$1*"));
       emitter.emit('data', part);
       
-      if (part[0] == "\{" /* make the IDE happy: } */) {
+      if (part[0] == "{" /* make the IDE happy: } */) {
         jsObject = JSON.parse(part);
         
         // We have to look in r/f for the footer due to a bug in TinyG...
-        var footer = jsObject['f'] || jsObject['r']['f'];
-        if (footer != null) {
+        var footer = jsObject.f || (jsObject.r && jsObject.r.f);
+        if (footer !== undefined) {
           /*
            * Checksums are failing too often, then there's no sign of transmission errors...
            * Bail on checksum checks for now...
@@ -416,24 +416,31 @@ function TinyG(path, openImmediately) {
             console.error("ERROR: Checksum mismatch: (actual) %d != (reported) %d)", checksum, footer[3]);
           */
           
-          if (footer[1] != 0) {
+          if (footer[1] !== 0) {
             console.error("ERROR: TinyG reported a parser error: %d (based on %d bytes read and a checksum of %d)", footer[1], footer[2], footer[3]);
           }
           
           // Remove the object so it doesn't get parsed anymore
-          delete jsObject['f'];
-          delete jsObject['r']['f'];
+          delete jsObject.f;
+          if (jsObject.r) {
+            delete jsObject.r.f;
+          }
         }
         
+        var jsObject = jsObject.r || jsObject;
+        var changed = null;
         // console.log(util.inspect(jsObject));
-        if (jsObject['r'].hasOwnProperty('sr')) {
-          var changed = self._mergeIntoState(jsObject['r']);
+        if (jsObject.hasOwnProperty('sr')) {
+          changed = self._mergeIntoState(jsObject.sr);
           if (Object.keys(changed).length > 0) {
             self.emit("stateChanged", changed);
           }
         }
+        else if (jsObject.hasOwnProperty('gc')) {
+            self.emit("gcodeReceived", jsObject.gc);
+        }
         else {
-          var changed = self._mergeIntoConfiguration(jsObject['r']);
+          changed = self._mergeIntoConfiguration(jsObject);
           if (Object.keys(changed).length > 0) {
             self.emit("configChanged", changed);
           }
@@ -444,9 +451,8 @@ function TinyG(path, openImmediately) {
       }
     } // parts.forEach function
     ); // parts.forEach
-  } // _tinygParser;
+  }; // _tinygParser;
   
-  var jsObject;
   var readBuffer = "";  
   serialPort = new SerialPort(path,
     {
@@ -509,10 +515,17 @@ function TinyG(path, openImmediately) {
   Object.defineProperty(this, "configuration", {
     get: function() { return self._configuration; },
     // Setter? There's no setter...
-    configurable : true, // We *can* delete this property. I don't know why though.
+    configurable : false, // We can *not* delete this property.
     enumerable : true // We want this one to show up in enumeration lists.
   });
-};
+
+  Object.defineProperty(this, "status", {
+    get: function() { return self._state; },
+    // Setter? There's no setter...
+    configurable : false, // We can *not* delete this property.
+    enumerable : true // We want this one to show up in enumeration lists.
+  });
+}
 
 
 util.inherits(TinyG, EventEmitter);
