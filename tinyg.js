@@ -472,9 +472,9 @@ function TinyG(path, openImmediately) {
       self.emit("data", data);
     });
     
-    self.ex = 2;
-    self.ee = 0;
-    self.jv = 5;
+    self.configuration.ex = 2;
+    self.configuration.ee = 0;
+    self.configuration.jv = 5;
     
     // serialPort.write('{"ee" : 0}\n');//Set echo off, it'll confuse the parser
     // serialPort.write('{"jv" : 4}\n');//Set JSON verbosity to 4
