@@ -18,6 +18,6 @@
   },
   "license": "GPL",
   "dependencies": {
-    "serialport": "git+ssh://git@github.com:giseburt/node-serialport.git"
+    "serialport": "git+https://github.com/giseburt/node-serialport.git"
   }
 }

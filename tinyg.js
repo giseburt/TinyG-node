@@ -2,7 +2,8 @@ var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 
 //var spawn = require('child_process').spawn;
-var SerialPort = require("serialport").SerialPort;
+var serialport_module = require("serialport"),
+    SerialPort = serialport_module.SerialPort;
 
 function TinyG(path, openImmediately) {
   // Squirrel away a ref to 'this' for use in callbacks.
@@ -176,7 +177,7 @@ function TinyG(path, openImmediately) {
           Object.defineProperty(subself, n, {
             // We define the get/set keys, so this is an "accessor descriptor".
             get: function() {
-              // console.log("Get:", JSON.stringify(request));
+              console.log("Get:", JSON.stringify(request));
               serialPort.write(JSON.stringify(request) + "\n");
               
               // return the stale version
@@ -184,7 +185,7 @@ function TinyG(path, openImmediately) {
             },
             set: function(newvalue) {
               r[n]=newvalue;
-              // console.log("Set:", JSON.stringify(request));
+              console.log("Set:", JSON.stringify(request));
               serialPort.write(JSON.stringify(request) + "\n");
             },
             configurable : true, // We *can* delete this property. I don't know why though.
@@ -472,9 +473,9 @@ function TinyG(path, openImmediately) {
       self.emit("data", data);
     });
     
-    self.configuration.ex = 2;
-    self.configuration.ee = 0;
-    self.configuration.jv = 5;
+    self.ex = 2;
+    self.ee = 0;
+    self.jv = 5;
     
     // serialPort.write('{"ee" : 0}\n');//Set echo off, it'll confuse the parser
     // serialPort.write('{"jv" : 4}\n');//Set JSON verbosity to 4
@@ -510,6 +511,10 @@ function TinyG(path, openImmediately) {
   
   serialPort.on("error", function(err) {
     self.emit("error", err);
+  });
+  
+  serialPort.on("close", function(err) {
+    self.emit("close");
   });
 
   Object.defineProperty(this, "configuration", {
@@ -551,5 +556,24 @@ TinyG.prototype.write = function(value, callback) {
   }
 };
 
+module.exports.list = function(callback) {
+  serialport_module.list(function (err, results) {
+    if (err) {
+      callback(err, null);
+      return;
+    }
+    
+    var tinygOnlyResults = [];
+    
+    for (var i = 0; i < results.length; i++) {
+      var item = results[i];
+      if (item.manufacturer == 'FTDI' || item.manufacturer == 'Synthetos') {
+        tinygOnlyResults.push(item);
+      }
+    }
+    
+    callback(null, tinygOnlyResults);
+  })
+};
 
 module.exports.TinyG = TinyG;
