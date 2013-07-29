@@ -1,0 +1,84 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN">
+<html>
+	<head>
+		<script src="/socket.io/socket.io.js" type="text/javascript">
+		</script>
+		
+		<script type="text/javascript">
+		var socket = io.connect();//'http://localhost'
+		
+		// This will be broken into it's own module soon:
+		
+		function TinyG() {
+			var self = this;
+			
+			this._configuration = {};
+			this._status = {};
+		  
+			var _merge = function (to, from) {
+				for (var n in from) {
+					if (to[n] === null || typeof to[n] != 'object') {
+						to[n] = from[n];
+					} else if (typeof from[n] == 'object') {
+						if (changed[n] === undefined) {
+							changed[n] = {};
+						}
+
+						to[n] = _merge(to[n], from[n]);
+					} // if (is not object) ... else
+				} // for (n in from)
+				return to;
+			};
+			
+			// Debugging
+			socket.on('data', function(data) {
+				// console.log("RAW: "+data);
+				self.emit('data', data);
+			});
+			socket.on('configChanged', function(changed) {
+				// console.log("configChanged: "+JSON.stringify(changed));
+				self.emit('configChanged', changed);
+			});
+			socket.on('stateChanged', function(changed) {
+				// console.log("stateChanged: "+JSON.stringify(changed));
+				self.emit('stateChanged', changed);
+			});
+		  socket.on('gcodeReceived', function(gc) {
+				// console.log("stateChanged: "+JSON.stringify(changed));
+				self.emit('gcodeReceived', gc);
+			});
+		  socket.on('list', function(results) {
+				console.log("list: "+JSON.stringify(results));
+				self.emit('list', results);
+			});
+		}
+		TinyG.prototype.list = function(callback) {
+			if (callback !== undefined)
+				socket.once('list', callback);
+			socket.emit('list');
+		};
+		
+		TinyG.prototype.open = function(port) {
+			socket.emit('open', port);
+		}
+		TinyG.prototype.close = function() {
+			socket.emit('close');
+		}
+		
+		TinyG.prototype.write = function(data) {
+			socket.emit('write', data);
+		}
+		
+		
+		
+		io.util.mixin(TinyG, io.EventEmitter);
+		
+		var g = new TinyG();
+		
+		</script>
+		
+		<title>TinyG.io</title>
+	</head>
+	<body>
+	</body>
+</html>

@@ -2,15 +2,16 @@ var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 
 //var spawn = require('child_process').spawn;
-var serialport_module = require("serialport"),
-    SerialPort = serialport_module.SerialPort;
+var SerialPortModule = require("serialport"),
+    SerialPort = SerialPortModule.SerialPort;
 
-function TinyG(path, openImmediately) {
+function TinyG() {
   // Squirrel away a ref to 'this' for use in callbacks.
   var self = this;
   
   //predefine
-  var serialPort;
+  var serialPort = null;
+  this.serialPort = serialPort;
   
   // Store the last sr
   this._state = {};
@@ -98,8 +99,9 @@ function TinyG(path, openImmediately) {
         if (v[0] == "number" || v[0] == "string") {
           // Create the property, and init it as null.
           subconfig[n] = null;
-        } else
-
+        } // if "number" or "string"
+        
+        else
         // Is this a length?
         if (v[0] == "length") {
           // We need to force a new context, and for..in doesn't do that.
@@ -136,7 +138,8 @@ function TinyG(path, openImmediately) {
             });
 
           })(subconfig, n, "_"+n);
-        } // "length"
+        } // if "length"
+        
         else
         if (v[0] == "unit") {
           // We need to force a new context, and for..in doesn't do that.
@@ -161,7 +164,7 @@ function TinyG(path, openImmediately) {
             });
 
           })(subconfig, n);
-        } // "length"
+        } // if "unit"
         
         
         // For all values, create a setter and getter on self
@@ -178,7 +181,7 @@ function TinyG(path, openImmediately) {
             // We define the get/set keys, so this is an "accessor descriptor".
             get: function() {
               console.log("Get:", JSON.stringify(request));
-              serialPort.write(JSON.stringify(request) + "\n");
+              self.write(request);
               
               // return the stale version
               return subconfig[n];
@@ -186,7 +189,7 @@ function TinyG(path, openImmediately) {
             set: function(newvalue) {
               r[n]=newvalue;
               console.log("Set:", JSON.stringify(request));
-              serialPort.write(JSON.stringify(request) + "\n");
+              self.write(request);
             },
             configurable : true, // We *can* delete this property. I don't know why though.
             enumerable : true // We want this one to show up in enumeration lists.
@@ -266,7 +269,7 @@ function TinyG(path, openImmediately) {
             // We define the get/set keys, so this is an "accessor descriptor".
             get: function() {
               console.log("Get alias:", JSON.stringify(request), " aliasKey:", aliasKey);
-              serialPort.write(JSON.stringify(request) + "\n");
+              self.write(request);
               
               // return the stale version
               return subconfig[aliasKey];
@@ -276,7 +279,7 @@ function TinyG(path, openImmediately) {
               r[aliasKey]=newValue;
               
               console.log("Set alias:", JSON.stringify(request));
-              serialPort.write(JSON.stringify(request) + "\n");
+              self.write(request);
             },
             configurable : true, // We *can* delete this property. I don't know why though.
             enumerable : true // We want this one to show up in enumeration lists.
@@ -356,26 +359,8 @@ function TinyG(path, openImmediately) {
     _merge(changed, this._configuration, jsonObj);
     return changed;
   };
-  
-  // Via http://werxltd.com/wp/2010/05/13/javascript-implementation-of-javas-string-hashcode-method/
-  // Thank you 
-  this.hashCode = function(s) {
-    var hash = 0,
-    strlen = s.length,
-    i,
-    c;
-    if ( strlen === 0 ) {
-      return hash;
-    }
-    for ( i = 0; i < strlen; i++ ) {
-      c = s.charCodeAt( i );
-      // hash = (31 * hash) + c;
-      hash = ((hash << 5) - hash) + c;
-      hash = hash & hash; // Convert to 32bit integer
-    }
-    return hash;
-  };
-  
+
+  var readBuffer = "";  
   var _tinygParser = function (emitter, buffer) {
     // Collect data
     readBuffer += buffer.toString();
@@ -391,7 +376,7 @@ function TinyG(path, openImmediately) {
       if (part.match(/^\s*$/))
         return;
       
-      // console.log('part: ' + part.replace(/([\x00-\x20])/, "*$1*"));
+      console.log('part: ' + part.replace(/([\x00-\x20])/, "•"));
       emitter.emit('data', part);
       
       if (part[0] == "{" /* make the IDE happy: } */) {
@@ -400,23 +385,6 @@ function TinyG(path, openImmediately) {
         // We have to look in r/f for the footer due to a bug in TinyG...
         var footer = jsObject.f || (jsObject.r && jsObject.r.f);
         if (footer !== undefined) {
-          /*
-           * Checksums are failing too often, then there's no sign of transmission errors...
-           * Bail on checksum checks for now...
-           
-          // To calculate the hash, we need to partially hand parse the part. We'll use a RegExp:
-          hashablePart = part.replace(/(,"f":\[[0-9.]+,[0-9.]+,[0-9.]+),[0-9.]+\]\}\}?/, "$1");
-          
-          console.log("hashablePart: '%s'", hashablePart);
-          
-          // See http://javascript.about.com/od/problemsolving/a/modulobug.htm for the weirness explained.
-          // Short form: javascript has a modulus bug.
-          checksum = (((self.hashCode(hashablePart) + 0) % 9999) + 9999) % 9999;
-          
-          if (checksum != footer[3])
-            console.error("ERROR: Checksum mismatch: (actual) %d != (reported) %d)", checksum, footer[3]);
-          */
-          
           if (footer[1] !== 0) {
             console.error("ERROR: TinyG reported a parser error: %d (based on %d bytes read and a checksum of %d)", footer[1], footer[2], footer[3]);
           }
@@ -454,69 +422,13 @@ function TinyG(path, openImmediately) {
     ); // parts.forEach
   }; // _tinygParser;
   
-  var readBuffer = "";  
-  serialPort = new SerialPort(path,
-    {
+  this._baseOptions = {
     baudrate: 115200,
     flowcontrol: true,
     // Provide our own custom parser:
     parser: _tinygParser
-    },
-    openImmediately
-  );
+  };
   
-  this.serialPort = serialPort;
-
-  serialPort.on("open", function () {
-    // spawn('/bin/stty', ['-f', path, 'crtscts']);
-    serialPort.on('data', function(data) {
-      self.emit("data", data);
-    });
-    
-    self.ex = 2;
-    self.ee = 0;
-    self.jv = 5;
-    
-    // serialPort.write('{"ee" : 0}\n');//Set echo off, it'll confuse the parser
-    // serialPort.write('{"jv" : 4}\n');//Set JSON verbosity to 4
-    serialPort.write('{"sr" :""}\n');//return motor 1 settings
-    serialPort.write('{"1"  :""}\n');//return motor 1 settings
-    serialPort.write('{"2"  :""}\n');//
-    serialPort.write('{"3"  :""}\n');//
-    serialPort.write('{"4"  :""}\n');//
-    serialPort.write('{"x"  :""}\n');//return X axis settings
-    serialPort.write('{"y"  :""}\n');//
-    serialPort.write('{"z"  :""}\n');//
-    serialPort.write('{"a"  :""}\n');//
-    serialPort.write('{"b"  :""}\n');//
-    serialPort.write('{"c"  :""}\n');//
-    serialPort.write('{"sys":""}\n');//return system settings
-    serialPort.write('{"pos":""}\n');//return work coordinate positions fox XYZABC axes. In mm or inches depending on G20/G21
-    serialPort.write('{"mpo":""}\n');//return absolute machine positions fox XYZABC axes. Always in mm, regardless of G20/G21
-    serialPort.write('{"ofs":""}\n');//return current offsets fox XYZABC axes. Sums coordinate system and G92 offsets. in mm.
-    serialPort.write('{"hom":""}\n');//return homing state fox XYZABC axes, and 'e' for the entire machine. 1=homed, 0=not.
-    serialPort.write('{"p1":""} \n');//return PWM channel 1 settings (currently there is only 1 PWM channel)
-    serialPort.write('{"g54":""}\n');//return offsets for work coordinate system #1 (G54)
-    serialPort.write('{"g55":""}\n');//#2
-    serialPort.write('{"g56":""}\n');//#3
-    serialPort.write('{"g57":""}\n');//#4
-    serialPort.write('{"g58":""}\n');//#5
-    serialPort.write('{"g59":""}\n');//#6
-    serialPort.write('{"g92":""}\n');//return G92 offsets currently in effect
-    serialPort.write('{"g28":""}\n');//return coordinate saved by G28 command
-    serialPort.write('{"g30":""}\n');//return coordinate saved by G30 command
-
-    self.emit('open');
-  });
-  
-  serialPort.on("error", function(err) {
-    self.emit("error", err);
-  });
-  
-  serialPort.on("close", function(err) {
-    self.emit("close");
-  });
-
   Object.defineProperty(this, "configuration", {
     get: function() { return self._configuration; },
     // Setter? There's no setter...
@@ -532,32 +444,78 @@ function TinyG(path, openImmediately) {
   });
 }
 
-
 util.inherits(TinyG, EventEmitter);
 
-TinyG.prototype.open = function (callback) {
+TinyG.prototype.open = function (path, options) {
   var self = this;
-  self.serialPort.open(callback);
-  // if (callback) { callback(); }
+  if (self.serialPort !== null) {
+    throw new Error("Unable to open TinyG at path '" + path + "' -- TinyG already open.");
+  }
+  options = options || {};
+  for (key in self._baseOptions) {
+    options[key] = options[key] || self._baseOptions[key];
+  }
+  
+  console.log(util.inspect(options));
+  self.serialPort = new SerialPort(path, options);
+  
+  self.serialPort.on("open", function () {
+    // spawn('/bin/stty', ['-f', path, 'crtscts']);
+    self.serialPort.on('data', function(data) {
+      self.emit("data", data);
+    });
+    
+    self.ex = 2; //Set flow control to RTS/CTS
+    self.ee = 0; //Set echo off, it'll confuse the parser
+    self.jv = 4; //Set JSON verbosity to 5 (max)
+    
+    // get the status report
+    self.write({sr:null});
+    
+    for (var key in self._configuration) {
+      var req = {};
+      req[key] = "";
+      self.write(req); // Fetch each group
+    }
+
+    self.emit('open');
+  });
+  
+  self.serialPort.on("error", function(err) {
+    self.emit("error", err);
+  });
+  
+  self.serialPort.on("close", function(err) {
+    self.serialPort = null;
+    self.emit("close", err);
+  });
 };
 
 TinyG.prototype.close = function() {
   var self = this;
+  if (self.serialPort === null)
+    return;
+  
   self.serialPort.close();
+  // 'close' event will set self.serialPort = null.
 };
 
 TinyG.prototype.write = function(value, callback) {
   var self = this;
+  if (self.serialPort === null)
+    return;
   
   if (typeof value !== "string") {
+      // console.log("###WRITEjs: ", JSON.stringify(value))
       self.serialPort.write(JSON.stringify(value) + '\n', callback);
   } else {
+    // console.log("###WRITE: ", value)
       self.serialPort.write(value, callback);
   }
 };
 
-module.exports.list = function(callback) {
-  serialport_module.list(function (err, results) {
+TinyG.prototype.list = function(callback) {
+  SerialPortModule.list(function (err, results) {
     if (err) {
       callback(err, null);
       return;
@@ -576,4 +534,36 @@ module.exports.list = function(callback) {
   })
 };
 
-module.exports.TinyG = TinyG;
+
+TinyG.prototype.useSocket = function(socket) {
+  var self = this;
+  
+  self.on('open', function() { socket.emit('open'); });
+  self.on('error', function(err) { socket.emit('error', err); });
+  self.on('close', function(err) { socket.emit('close', err); });
+  self.on('data', function(data) { socket.emit('data', data); });
+  
+  self.on('configChanged', function(changed) { socket.emit('configChanged', changed); });
+  self.on('stateChanged', function(changed) { socket.emit('stateChanged', changed); });
+  self.on('gcodeReceived', function(gc) { socket.emit('gcodeReceived', gc); });
+  self.on('unitChanged', function(unitMultiplier) { socket.emit('unitChanged', unitMultiplier); });
+  
+  // Function proxies:
+  socket.on('open', function() { self.open.apply(self, arguments); });
+  socket.on('close', function() { self.close(); });
+  socket.on('write', function(data) { self.write(data); });
+  socket.on('list', function() {
+    self.list(function(err, results) {
+      if (err) {
+        socket.emit('error', err);
+        return;
+      }
+      console.log("listing:" + results);
+      socket.emit('list', results);
+    }); 
+  });
+  
+  
+};
+
+module.exports = TinyG;
