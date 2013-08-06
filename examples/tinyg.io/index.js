@@ -8,7 +8,7 @@ var TinyG = require("../../tinyg");
 
 var g = new TinyG();
 
-app.listen(8081);
+app.listen(8082);
 
 function handler (req, res) {
   fs.readFile(__dirname + '/index.html',

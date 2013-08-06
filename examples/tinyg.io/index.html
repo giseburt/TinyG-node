@@ -44,7 +44,7 @@
 				self.emit('stateChanged', changed);
 			});
 		  socket.on('gcodeReceived', function(gc) {
-				// console.log("stateChanged: "+JSON.stringify(changed));
+				// console.log("gcodeReceived: "+JSON.stringify(gc));
 				self.emit('gcodeReceived', gc);
 			});
 		  socket.on('list', function(results) {
