@@ -123,11 +123,11 @@ function tinygAttached() {
     b.digitalWrite(ledPin2, b.LOW);
 
     resetClose();
-    //		tinyg.write('{"test":1}\n');
+    tinyg.write('{"test":1}\n');
 
-    tinyg.write('{"gc":"g0x10"}\n');
-    tinyg.write('{"gc":"g0x0"}\n');
-    tinyg.write('{"gc":"m2"}\n');
+    // tinyg.write('{"gc":"g0x10"}\n');
+    // tinyg.write('{"gc":"g0x0"}\n');
+    // tinyg.write('{"gc":"m2"}\n');
 
     // console.log('#### open');
     // console.log('sys/ex: ' + util.inspect(tinyg.ex));
