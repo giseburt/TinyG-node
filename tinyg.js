@@ -380,8 +380,14 @@ function TinyG() {
       emitter.emit('data', part);
       
       if (part[0] == "{" /* make the IDE happy: } */) {
-        jsObject = JSON.parse(part);
-        
+        try {
+          jsObject = JSON.parse(part);
+        } catch(err) {
+          console.log('### ERROR: ', err);
+          console.log('### ERROR was parsing: ', part);
+          return;
+        }
+
         // We have to look in r/f for the footer due to a bug in TinyG...
         var footer = jsObject.f || (jsObject.r && jsObject.r.f);
         if (footer !== undefined) {
@@ -508,7 +514,11 @@ TinyG.prototype.write = function(value, callback) {
   if (typeof value !== "string") {
       // console.log("###WRITEjs: ", JSON.stringify(value))
       self.serialPort.write(JSON.stringify(value) + '\n', callback);
-  } else {
+  }
+  else { // It's a string:
+    if (value.match(/[\n\r]$/) === null)
+      value = value + "\n";
+
     // console.log("###WRITE: ", value)
       self.serialPort.write(value, callback);
   }
