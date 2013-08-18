@@ -1,6 +1,6 @@
 {
   "name": "tinyg",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "description": "Node module for controlling TinyG.",
   "main": "tinyg.js",
   "scripts": {
@@ -13,10 +13,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/giseburt/TinyG-node.git"
+    "url": "git+https://github.com/giseburt/TinyG-node.git"
   },
   "license": "GPL",
   "dependencies": {
-    "serialport": "git+https://github.com/giseburt/node-serialport.git"
+    "serialport": "git+https://github.com/giseburt/node-serialport.git#advanced"
   }
 }

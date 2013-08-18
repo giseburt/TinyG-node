@@ -2,16 +2,15 @@
 
 // Copy this script to /var/lib/cloud9/autorun/ on a beaglebone
 // To have an automatic-on-connect test routine run.
-
 // Warning : Some of this will only make sense with the test-rig hardware in place.
-
 var fs = require('fs');
 var b = require('bonescript');
 var TinyG;
 
 try {
-  TinyG = require("../TinyG-node/");
-} catch (e) {
+  TinyG = require("tinyg");
+}
+catch (e) {
   TinyG = require("./TinyG-node");
 }
 
@@ -89,34 +88,32 @@ function tinygAttached() {
       tinyg.close();
     }, 1000);
   }
+  tinyg.on('data', function(data) {
+    console.log('#### data received: ' + data);
+    resetClose();
+  });
 
-  tinyg.open(function() {
-    tinyg.on('data', function(data) {
-      console.log('#### data received: ' + data);
-      resetClose();
-    });
-
-    var starting = true;
-    tinyg.on('stateChanged', function(changed) {
-      console.log("State changed: " + util.inspect(changed));
-      if (tinyg.status.stat == 4) {
-        if (starting) {
-          starting = false;
-          return;
-        }
-        tinyg.write('{"md":1}\n');
-        console.log("##DONE");
-        clearTimeout(closeTimeout);
-        tinyg.close();
-        b.digitalWrite(ledPin1, b.LOW);
-      } else {
-        console.log("stat: ", tinyg.status.stat);
+  var starting = true;
+  tinyg.on('stateChanged', function(changed) {
+    console.log("State changed: " + util.inspect(changed));
+    if (tinyg.status.stat == 4) {
+      if (starting) {
+        starting = false;
+        return;
       }
-    });
+      tinyg.write('{"md":1}\n');
+      console.log("##DONE");
+      clearTimeout(closeTimeout);
+      tinyg.close();
+      b.digitalWrite(ledPin1, b.LOW);
+    }
+    else {
+      console.log("stat: ", tinyg.status.stat);
+    }
+  });
 
-    tinyg.on('configChanged', function(changed) {
-      console.log("Config changed: " + util.inspect(changed));
-    });
+  tinyg.on('configChanged', function(changed) {
+    console.log("Config changed: " + util.inspect(changed));
   });
 
   tinyg.on('open', function() {
@@ -128,8 +125,8 @@ function tinygAttached() {
     // tinyg.write('{"gc":"g0x10"}\n');
     // tinyg.write('{"gc":"g0x0"}\n');
     // tinyg.write('{"gc":"m2"}\n');
-
     // console.log('#### open');
     // console.log('sys/ex: ' + util.inspect(tinyg.ex));
   });
+
 }

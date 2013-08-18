@@ -376,6 +376,10 @@ function TinyG() {
       if (part.match(/^\s*$/))
         return;
       
+      // Remove stray XON/XOFF charaters that make it through the stream.
+      part = part.replace(/([\x13\x11])/, "");
+
+      // Mark everything else with a bullet
       console.log('part: ' + part.replace(/([\x00-\x20])/, "•"));
       emitter.emit('data', part);
       
@@ -429,8 +433,8 @@ function TinyG() {
   }; // _tinygParser;
   
   this._baseOptions = {
-    baudrate: 115200,
-    flowcontrol: true,
+    baudRate: 115200,
+    flowcontrol: ['XON','XOFF'],
     // Provide our own custom parser:
     parser: _tinygParser
   };
@@ -471,7 +475,7 @@ TinyG.prototype.open = function (path, options) {
       self.emit("data", data);
     });
     
-    self.ex = 2; //Set flow control to RTS/CTS
+    self.ex = 1; //Set flow control to 1: XON, 2: RTS/CTS
     self.ee = 0; //Set echo off, it'll confuse the parser
     self.jv = 4; //Set JSON verbosity to 5 (max)
     
