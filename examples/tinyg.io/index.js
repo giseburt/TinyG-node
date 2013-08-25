@@ -7,8 +7,10 @@ var app = require('http').createServer(handler)
 var TinyG = require("../../tinyg");
 
 var g = new TinyG();
+port=8082;
+app.listen(port);
+console.log("Open your browser to http://localhost:"+port);
 
-app.listen(8082);
 
 function handler (req, res) {
   var filename = '/index.html';
