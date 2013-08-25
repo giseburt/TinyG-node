@@ -1,5 +1,6 @@
 var EventEmitter = require('events').EventEmitter;
 var util = require('util');
+var fs = require('fs');
 
 //var spawn = require('child_process').spawn;
 var SerialPortModule = require("serialport"),
@@ -434,7 +435,7 @@ function TinyG() {
   
   this._baseOptions = {
     baudRate: 115200,
-    flowcontrol: ['XON','XOFF'],
+    flowcontrol: ['RTSCTS'],
     // Provide our own custom parser:
     parser: _tinygParser
   };
@@ -475,10 +476,11 @@ TinyG.prototype.open = function (path, options) {
       self.emit("data", data);
     });
     
-    self.ex = 1; //Set flow control to 1: XON, 2: RTS/CTS
+    self.ex = 2; //Set flow control to 1: XON, 2: RTS/CTS
     self.ee = 0; //Set echo off, it'll confuse the parser
     self.jv = 4; //Set JSON verbosity to 5 (max)
-    
+    self.qv = 2; //Set queue report verbosity
+
     // get the status report
     self.write({sr:null});
     
@@ -528,6 +530,37 @@ TinyG.prototype.write = function(value, callback) {
   }
 };
 
+TinyG.prototype.sendFile = function(filename) {
+  var self = this;
+
+  var readBuffer = "";  
+
+  console.log("###SENDFILE: ", filename)
+  
+  var readStream = fs.createReadStream(filename);
+
+  readStream.on('readable', function() {
+    var data = readStream.read()
+
+    readBuffer += data.toString();
+
+    // Split collected data by line endings
+    var parts = readBuffer.split(/(\r\n|\r|\n)+/);
+    
+    // If there is leftover data, 
+    readBuffer = parts.pop();
+
+    parts.forEach(function (part) {
+      // Cleanup and remove blank or all-whitespace lines.
+      if (part.match(/^\s*$/) || self.configuration.qr < 4)
+        return;
+
+      self.write(part);
+      self.configuration.qr--;
+    });
+  });
+};
+
 TinyG.prototype.list = function(callback) {
   SerialPortModule.list(function (err, results) {
     if (err) {
@@ -566,13 +599,14 @@ TinyG.prototype.useSocket = function(socket) {
   socket.on('open', function() { self.open.apply(self, arguments); });
   socket.on('close', function() { self.close(); });
   socket.on('write', function(data) { self.write(data); });
+  socket.on('sendFile', function(path) { self.sendFile(path); });
   socket.on('list', function() {
     self.list(function(err, results) {
       if (err) {
         socket.emit('error', err);
         return;
       }
-      console.log("listing:" + results);
+      // console.log("listing:" + results);
       socket.emit('list', results);
     }); 
   });

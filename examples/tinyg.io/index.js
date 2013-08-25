@@ -11,7 +11,14 @@ var g = new TinyG();
 app.listen(8082);
 
 function handler (req, res) {
-  fs.readFile(__dirname + '/index.html',
+  var filename = '/index.html';
+
+  if (req.url.match(/\/lib\/.*\.js/)) {
+    filename = req.url;
+    res.setHeader("Content-Type", "application/javascript");
+  }
+
+  fs.readFile(__dirname + filename,
   function (err, data) {
     if (err) {
       res.writeHead(500);
@@ -22,8 +29,6 @@ function handler (req, res) {
     res.end(data);
   });
 }
-
-
 
 io.sockets.on('connection', function (socket) {
   g.useSocket(socket);

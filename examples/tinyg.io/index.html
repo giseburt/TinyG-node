@@ -1,8 +1,8 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN">
 <html>
 	<head>
-		<script src="/socket.io/socket.io.js" type="text/javascript">
-		</script>
+		<script src="/socket.io/socket.io.js" type="text/javascript"></script>
+		<script src="/lib/raphael-min.js" type="text/javascript"></script>
 		
 		<script type="text/javascript">
 		var socket = io.connect();//'http://localhost'
@@ -48,33 +48,59 @@
 				self.emit('gcodeReceived', gc);
 			});
 		  socket.on('list', function(results) {
-				console.log("list: "+JSON.stringify(results));
+				console.log("got list: "+JSON.stringify(results));
+				self.listResults = results;
 				self.emit('list', results);
 			});
 		}
 		TinyG.prototype.list = function(callback) {
 			if (callback !== undefined)
 				socket.once('list', callback);
+
+			// Request the other side to "list"
 			socket.emit('list');
 		};
 		
 		TinyG.prototype.open = function(port) {
+			// Request the other side to "open"
 			socket.emit('open', port);
 		}
 		TinyG.prototype.close = function() {
+			// Request the other side to "close"
 			socket.emit('close');
 		}
 		
 		TinyG.prototype.write = function(data) {
+			// Request the other side to "write"
 			socket.emit('write', data);
 		}
 		
-		
-		
+		TinyG.prototype.sendFile = function(path) {
+			// Request the other side to "sendFile"
+			socket.emit('sendFile', path);
+		}
+
 		io.util.mixin(TinyG, io.EventEmitter);
 		
 		var g = new TinyG();
 		
+		window.onload = function () {
+			// setup drawing
+			var paper = Raphael(0, 0, document.width, document.height)
+			var line = paper.path("M0,0").attr({fill: "none", stroke: "rgba(0,0,0,0.25)", "arrow-end": "open-narrow-short"});
+			var pathSegments = ["M",document.width/2,document.width/2];
+			var oldPos = {x:document.width/2, y:document.width/2};
+			g.on('stateChanged', function(sr){
+				if (sr.posx || sr.posy) {
+					if (sr.posx)
+						oldPos.x = sr.posx + document.width/2;
+					if (sr.posy)
+						oldPos.y = sr.posy + document.height/2;
+					pathSegments.push("L", oldPos.x, oldPos.y);
+					line.attr({path:pathSegments.join(",")});
+				}
+			});
+		};
 		</script>
 		
 		<title>TinyG.io</title>
