@@ -42,8 +42,14 @@ function devSerialChanged(event, filename) {
 
   if (filename && filename == "serial") {
     if (fs.existsSync("/dev/serial/by-id/")) {
-      tinygAttached();
-      return;
+      if (fs.existsSync("/dev/ttyUSB0")) {
+        tinygAttached("/dev/ttyUSB0");
+        return;
+      }
+      if (fs.existsSync("/dev/ttyACM0")) {
+        tinygAttached("/dev/ttyACM0");
+        return;
+      }
     }
     tinygDetached();
   }
@@ -65,7 +71,7 @@ function tinygDetached() {
   b.digitalWrite(ledPin3, state);
 }
 
-function tinygAttached() {
+function tinygAttached(devName) {
   console.log('+');
 
   var state = b.HIGH;
@@ -76,7 +82,7 @@ function tinygAttached() {
   b.digitalWrite(ledPin3, state);
 
   var tinyg = new TinyG();
-  tinyg.open('/dev/ttyUSB0', false);
+  tinyg.open(devName, false);
   var closeTimeout = null;
   b.digitalWrite(ledPin3, b.LOW);
 
@@ -109,6 +115,7 @@ function tinygAttached() {
     }
     else {
       console.log("stat: ", tinyg.status.stat);
+      resetClose();
     }
   });
 
@@ -120,11 +127,10 @@ function tinygAttached() {
     b.digitalWrite(ledPin2, b.LOW);
 
     resetClose();
-    tinyg.write('{"test":1}\n');
-
-    // tinyg.write('{"gc":"g0x10"}\n');
-    // tinyg.write('{"gc":"g0x0"}\n');
-    // tinyg.write('{"gc":"m2"}\n');
+    //    tinyg.write('{"test":1}\n');
+    tinyg.write('{"gc":"g0x100"}\n');
+    tinyg.write('{"gc":"g0x0"}\n');
+    //     tinyg.write('{"gc":"m2"}\n');
     // console.log('#### open');
     // console.log('sys/ex: ' + util.inspect(tinyg.ex));
   });
