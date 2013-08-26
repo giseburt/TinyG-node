@@ -35,6 +35,10 @@
 				// console.log("RAW: "+data);
 				self.emit('data', data);
 			});
+			socket.on('error', function(data) {
+				console.log("error: "+JSON.stringify(data));
+				// self.emit('data', data);
+			});
 			socket.on('configChanged', function(changed) {
 				// console.log("configChanged: "+JSON.stringify(changed));
 				self.emit('configChanged', changed);
@@ -83,21 +87,31 @@
 		io.util.mixin(TinyG, io.EventEmitter);
 		
 		var g = new TinyG();
-		
+		var paper;
+
 		window.onload = function () {
 			// setup drawing
-			var paper = Raphael(0, 0, document.width, document.height)
-			var line = paper.path("M0,0").attr({fill: "none", stroke: "rgba(0,0,0,0.25)", "arrow-end": "open-narrow-short"});
-			var pathSegments = ["M",document.width/2,document.width/2];
-			var oldPos = {x:document.width/2, y:document.width/2};
+			paper = Raphael(0, 0, document.width, document.height)
+			paper.setViewBox(document.width/4, document.height/4, document.height/2, document.width/2);
+
+			// var line = paper.path("M0,0").attr({fill: "none", stroke: "rgba(0,0,0,0.25)", "arrow-end": "open-narrow-short"});
+			// var pathSegments = ["M",document.width/2,document.height/2];
+			var oldPos = {x:document.width/2, y:document.height/2};
 			g.on('stateChanged', function(sr){
 				if (sr.posx || sr.posy) {
+					newPos = {x: oldPos.x, y: oldPos.y};
+
 					if (sr.posx)
-						oldPos.x = sr.posx + document.width/2;
+						newPos.x = sr.posx + document.width/2;
 					if (sr.posy)
-						oldPos.y = sr.posy + document.height/2;
-					pathSegments.push("L", oldPos.x, oldPos.y);
-					line.attr({path:pathSegments.join(",")});
+						newPos.y = sr.posy + document.height/2;
+
+					var line = paper.path(["M", oldPos.x, oldPos.y, "L", newPos.x, newPos.y].join(",")).attr({fill: "none", stroke: "rgba(0,0,0,0.25)"});//, "arrow-end": "open-narrow-short"
+
+					oldPos = newPos;
+
+					// pathSegments.push("L", oldPos.x, oldPos.y);
+					// line.attr({path:pathSegments.join(",")});
 				}
 			});
 		};

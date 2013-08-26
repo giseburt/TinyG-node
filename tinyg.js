@@ -494,7 +494,7 @@ TinyG.prototype.open = function (path, options) {
   });
   
   self.serialPort.on("error", function(err) {
-    self.emit("error", err);
+    self.emit("error", {serialPortError:err});
   });
   
   self.serialPort.on("close", function(err) {
@@ -512,8 +512,17 @@ TinyG.prototype.close = function() {
   // 'close' event will set self.serialPort = null.
 };
 
+var writeCallback = function (err, results) {
+  if (err)
+    console.error("WRITE ERROR: ", err);
+}
+
 TinyG.prototype.write = function(value, callback) {
   var self = this;
+
+  if (callback === undefined)
+    callback = writeCallback;
+
   if (self.serialPort === null)
     return;
   
@@ -552,11 +561,13 @@ TinyG.prototype.sendFile = function(filename) {
 
     parts.forEach(function (part) {
       // Cleanup and remove blank or all-whitespace lines.
-      if (part.match(/^\s*$/) || self.configuration.qr < 4)
+      if (part.match(/^\s*$/) )//|| self._configuration.qr < 4
         return;
 
       self.write(part);
-      self.configuration.qr--;
+      self._configuration.qr--;
+
+      console.log(">>QR: ", self._configuration.qr);
     });
   });
 };

@@ -17,6 +17,6 @@
   },
   "license": "GPL",
   "dependencies": {
-    "serialport": "git+https://github.com/giseburt/node-serialport.git#fix_close_and_flowcontrol"
+    "serialport": "git+https://github.com/giseburt/node-serialport.git#advanced"
   }
 }
