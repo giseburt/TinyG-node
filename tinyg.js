@@ -552,9 +552,12 @@ TinyG.prototype.sendFile = function(filename) {
   var readBuffer = "";  
   var readStream = fs.createReadStream(filename);
 
-  readStream.on('readable', function() {
-    var data = readStream.read()
+  readStream.on('error', function(err) {
+    console.log(err);
+    throw err;
+  });
 
+  readStream.on('data', function(data) {
     readBuffer += data.toString();
 
     // Split collected data by line endings

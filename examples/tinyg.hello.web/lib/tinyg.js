@@ -84,6 +84,7 @@ TinyG.prototype.write = function(data) {
 
 TinyG.prototype.sendFile = function(path) {
 	// Request the other side to "sendFile"
+	console.log("sendFile: "+path);
 	socket.emit('sendFile', path);
 }
 
