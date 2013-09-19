@@ -15,7 +15,7 @@ function TinyG() {
   this.serialPort = serialPort;
   
   // Store the last sr
-  this._state = {};
+  this._status = {};
   this._lengthMultiplier = 1;
   
   // See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty
@@ -32,7 +32,7 @@ function TinyG() {
    */
 
   // self.state.unit returns with 0 for inches and 1 for mm, just like the TinyG JSON mode does.
-  Object.defineProperty(this._state, "unit", {
+  Object.defineProperty(this._status, "unit", {
     // We define the get/set keys, so this is an "accessor descriptor".
     get: function() { return self._lengthMultiplier == 25.4 ? 0 : 1; },
     set: function(newUnit) {
@@ -47,7 +47,7 @@ function TinyG() {
   });
 
   // self.state.unitMultiplier returns with the multiplier from mm, which is 1 for mm mode and 25.4 for inches mode.
-  Object.defineProperty(this._state, "unitMultiplier", {
+  Object.defineProperty(this._status, "unitMultiplier", {
     // We define the get/set keys, so this is an "accessor descriptor".
     get: function() { return self._lengthMultiplier; },
     set: function(newUnitMultiplier) {
@@ -351,7 +351,7 @@ function TinyG() {
 
   this._mergeIntoState = function(jsonObj) {
     var changed = {};
-    _merge(changed, this._state, jsonObj);
+    _merge(changed, this._status, jsonObj);
     return changed;
   };
 
@@ -413,7 +413,7 @@ function TinyG() {
         if (jsObject.hasOwnProperty('sr')) {
           changed = self._mergeIntoState(jsObject.sr);
           if (Object.keys(changed).length > 0) {
-            self.emit("stateChanged", changed);
+            self.emit("statusChanged", changed);
           }
         }
         else if (jsObject.hasOwnProperty('gc')) {
@@ -427,7 +427,7 @@ function TinyG() {
         }
 
         // console.log("Conf: " + JSON.stringify(self._configuration));
-        // console.log("Stat: " + util.inspect(self._state));
+        // console.log("Stat: " + util.inspect(self._status));
       }
     } // parts.forEach function
     ); // parts.forEach
@@ -448,7 +448,7 @@ function TinyG() {
   });
 
   Object.defineProperty(this, "status", {
-    get: function() { return self._state; },
+    get: function() { return self._status; },
     // Setter? There's no setter...
     configurable : false, // We can *not* delete this property.
     enumerable : true // We want this one to show up in enumeration lists.
@@ -471,6 +471,9 @@ TinyG.prototype.open = function (path, options) {
   self.serialPort = new SerialPort(path, options);
   
   self.serialPort.on("open", function () {
+    self._status.open = true;
+    self._status.openPort = path;
+
     // spawn('/bin/stty', ['-f', path, 'crtscts']);
     self.serialPort.on('data', function(data) {
       self.emit("data", data);
@@ -499,6 +502,10 @@ TinyG.prototype.open = function (path, options) {
   
   self.serialPort.on("close", function(err) {
     self.serialPort = null;
+    
+    self._status.open = false;
+    self._status.openPort = null;
+
     self.emit("close", err);
   });
 };
@@ -543,9 +550,6 @@ TinyG.prototype.sendFile = function(filename) {
   var self = this;
 
   var readBuffer = "";  
-
-  console.log("###SENDFILE: ", filename)
-  
   var readStream = fs.createReadStream(filename);
 
   readStream.on('readable', function() {
@@ -561,13 +565,86 @@ TinyG.prototype.sendFile = function(filename) {
 
     parts.forEach(function (part) {
       // Cleanup and remove blank or all-whitespace lines.
-      if (part.match(/^\s*$/) )//|| self._configuration.qr < 4
+      // TODO:
+      // * Handle relative QRs (when available)
+      // * Ability to stop or pause
+      // * Rewrite and map line numbers
+      if (part.match(/^\s*$/))
         return;
 
       self.write(part);
-      self._configuration.qr--;
+    });
+  });
+};
 
-      console.log(">>QR: ", self._configuration.qr);
+var VALID_CMD_LETTERS = ["m","g","t"];
+var ABSOLUTE = 0;
+var RELATIVE = 1;
+
+function _valueFromString(str) {
+  return str.substring(1).replace(/^\s+|\s+$/g, '').replace(/^0+?(?=[0-9]|-)/,'');
+}
+
+TinyG.prototype.parseGcode = function(line, readFileState) {
+  line = line.replace(/^\s+|\s+$/g, '').replace(/(;.*)|(\(.*?\))| /g , '').toLowerCase();
+
+  var attributes = {};
+  
+  var attributes_array = line.split(/(?=[a-z])/);
+  if (attributes_array.length != 0) {
+    if (attributes_array[0][0] == 'n') {
+      readFileState.line = _valueFromString(attributes_array[0]);
+      attributes_array.shift();
+    }
+  }
+
+  if (attributes_array.length != 0) {
+    for (var i = 0; i < VALID_CMD_LETTERS.length; i++) {
+      if (attributes_array[0][0] == VALID_CMD_LETTERS[i]) {
+        readFileState.command = {};
+        readFileState.command[attributes_array[0][0]] = _valueFromString(attributes_array[0]);
+
+        attributes_array.shift();
+        break;
+      }
+    };
+
+    for (var i = 0; i < attributes_array.length; i++) {
+      var attr = attributes_array[i];
+      attributes[attr[0]] = _valueFromString(attr);
+    };
+
+    console.log({cmd: readFileState.command, values: attributes});
+  }
+};
+
+TinyG.prototype.readFile = function(filename) {
+  var self = this;
+
+  var readFileState = {
+    _path: filename,
+    _mode: ABSOLUTE
+  };
+
+  var readBuffer = "";  
+  var readStream = fs.createReadStream(filename);
+
+  readStream.on('readable', function() {
+    var data = readStream.read()
+
+    readBuffer += data.toString();
+
+    // Split collected data by line endings
+    var parts = readBuffer.split(/(\r\n|\r|\n)+/);
+    
+    // If there is leftover data, 
+    readBuffer = parts.pop();
+
+    parts.forEach(function (part) {
+      if (part.match(/^\s*$/))
+        return;
+
+      self.parseGcode(part, readFileState);
     });
   });
 };
@@ -602,7 +679,7 @@ TinyG.prototype.useSocket = function(socket) {
   self.on('data', function(data) { socket.emit('data', data); });
   
   self.on('configChanged', function(changed) { socket.emit('configChanged', changed); });
-  self.on('stateChanged', function(changed) { socket.emit('stateChanged', changed); });
+  self.on('statusChanged', function(changed) { socket.emit('statusChanged', changed); });
   self.on('gcodeReceived', function(gc) { socket.emit('gcodeReceived', gc); });
   self.on('unitChanged', function(unitMultiplier) { socket.emit('unitChanged', unitMultiplier); });
   
@@ -611,6 +688,7 @@ TinyG.prototype.useSocket = function(socket) {
   socket.on('close', function() { self.close(); });
   socket.on('write', function(data) { self.write(data); });
   socket.on('sendFile', function(path) { self.sendFile(path); });
+  socket.on('readFile', function(path) { self.readFile(path); });
   socket.on('list', function() {
     self.list(function(err, results) {
       if (err) {
@@ -621,7 +699,8 @@ TinyG.prototype.useSocket = function(socket) {
       socket.emit('list', results);
     }); 
   });
-  
+  socket.on('getStatus', function(callback) { callback(self._status); });
+  socket.on('getConfiguration', function(callback) { callback(self._configuration); });
   
 };
 
