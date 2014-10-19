@@ -18,7 +18,7 @@
   "license": "GPL",
   "dependencies": {
     "nomnom": "^1.8.0",
-    "serialport": "*"
+    "serialport": "git+https://github.com/giseburt/node-serialport.git#master"
   },
   "bin": {
     "g": "bin/g.js"
