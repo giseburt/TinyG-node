@@ -45,16 +45,28 @@ function TinyG() {
         try {
           jsObject = JSON.parse(part);
         } catch(err) {
-          console.log('### ERROR: ', err);
-          console.log('### ERROR was parsing: ', part);
+          console.error('### ERROR: ', err);
+          console.error('### ERROR was parsing: ', part);
           return;
         }
 
         // We have to look in r/f for the footer due to a bug in TinyG...
         var footer = jsObject.f || (jsObject.r && jsObject.r.f);
         if (footer !== undefined) {
-          if (footer[1] !== 0) {
-            console.error("ERROR: TinyG reported a parser error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]);
+          if (footer[1] == 108) {
+            console.error("ERROR: TinyG reported an syntax error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]);
+          }
+
+          else if (footer[1] == 20) {
+            console.error("ERROR: TinyG reported an internal error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]);
+          }
+
+          else if (footer[1] == 202) {
+            console.error("ERROR: TinyG reported an TOO SHORT MOVE on line %d", jsObject.r.n);
+          }
+
+          else if (footer[1] != 0) {
+            console.error("ERROR: TinyG reported an error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]);
           }
 
           // Remove the object so it doesn't get parsed anymore
@@ -65,11 +77,12 @@ function TinyG() {
         }
 
         var jsObject = jsObject.r || jsObject;
-        var changed = null;
+        // var changed = null;
         // console.log(util.inspect(jsObject));
         if (jsObject.hasOwnProperty('sr')) {
           // changed = self._mergeIntoState(jsObject.sr);
           // if (Object.keys(changed).length > 0) {
+          // console.log("SR: ", jsObject.sr);
             self.emit("statusChanged", jsObject.sr);
           // }
         }
@@ -100,19 +113,19 @@ function TinyG() {
     parser: _tinygParser
   };
 
-  Object.defineProperty(this, "configuration", {
-    get: function() { return self._configuration; },
-    // Setter? There's no setter...
-    configurable : false, // We can *not* delete this property.
-    enumerable : true // We want this one to show up in enumeration lists.
-  });
-
-  Object.defineProperty(this, "status", {
-    get: function() { return self._status; },
-    // Setter? There's no setter...
-    configurable : false, // We can *not* delete this property.
-    enumerable : true // We want this one to show up in enumeration lists.
-  });
+  // Object.defineProperty(this, "configuration", {
+  //   get: function() { return self._configuration; },
+  //   // Setter? There's no setter...
+  //   configurable : false, // We can *not* delete this property.
+  //   enumerable : true // We want this one to show up in enumeration lists.
+  // });
+  //
+  // Object.defineProperty(this, "status", {
+  //   get: function() { return self._status; },
+  //   // Setter? There's no setter...
+  //   configurable : false, // We can *not* delete this property.
+  //   enumerable : true // We want this one to show up in enumeration lists.
+  // });
 }
 
 util.inherits(TinyG, EventEmitter);
@@ -158,7 +171,9 @@ TinyG.prototype.open = function (path, options) {
           "coor":true,
           "dist":true,
           "frmo":true,
-          "stat":true
+          "stat":true,
+          "line":true,
+          "gc":true
         }
       });
 
@@ -185,11 +200,20 @@ TinyG.prototype.open = function (path, options) {
 
 TinyG.prototype.close = function() {
   var self = this;
-  if (!self.serialPortControl === null)
-    self.serialPortControl.close();
 
-  if (!self.serialPortData === null)
+  // console.error("tinyg.close(): ", self.serialPortControl, self.serialPortData);
+
+  if (self.serialPortControl !== null) {
+    // console.error("Closing command channel.");
+    self.serialPortControl.close();
+    self.serialPortControl = null;
+  }
+
+  if (self.serialPortData !== null) {
+    // console.error("Closing data channel.");
     self.serialPortData.close();
+    self.serialPortData = null;
+  }
 
   // 'close' event will set self.serialPortControl = null.
 };
@@ -209,7 +233,7 @@ TinyG.prototype.write = function(value, callback) {
     return;
 
   if (typeof value !== "string") {
-      console.log("###WRITEjs: '%s'", JSON.stringify(value))
+      // console.error("###WRITEjs: '%s'", JSON.stringify(value))
       self.serialPortControl.write(JSON.stringify(value) + '\n', callback);
   }
   else { // It's a string:
@@ -217,21 +241,21 @@ TinyG.prototype.write = function(value, callback) {
       value = value + "\n";
 
     if (self.serialPortData === null || value.match(/^{}?/)) { // BTW: The optional close bracket is to appears the editor.
-      // console.log("###WRITE: '%s'", value)
+      // console.error("###WRITE: '%s'", value)
       self.serialPortControl.write(value, callback);
       // self.serialPortControl.drain(writeCallback);
     } else {
-      // console.log("***WRITE: '%s'", value)
+      // console.error("***WRITE: '%s'", value)
       self.serialPortData.write(value, callback);
     }
   }
 };
 
-TinyG.prototype.sendFile = function(filename) {
+TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
   var self = this;
 
   var readBuffer = "";
-  var fileSize = fs.statSync(filename).size;
+  // var fileSize = fs.statSync(filename).size;
 
   var dataChannel = self.serialPortControl;
 
@@ -262,7 +286,14 @@ TinyG.prototype.sendFile = function(filename) {
   }
 
   self.on('dataChannelReady', function () {
-    var readStream = fs.createReadStream(filename);
+    var readStream;
+    if (typeof filename_or_stdin == 'string') {
+      console.warn("Opening file '%s' for streaming.", filename_or_stdin)
+      readStream = fs.createReadStream(filename_or_stdin);
+    } else {
+      readStream = filename_or_stdin;
+      readStream.resume();
+    }
 
     readStream.on('error', function(err) {
       console.log(err);
@@ -272,20 +303,26 @@ TinyG.prototype.sendFile = function(filename) {
 
     self.write({qr:null});
 
-    var lineCountToSend = 0;
+    var linesToStayAhead = 200;
+    var lineCountToSend = linesToStayAhead;
     var lineCountSent = 0; // sent since the last qr
     var lineBuffer = [];
+    var totalLineCount = 0;
+    var totalLinesSent = 0;
+    var nextlineNumber = 0;
+    var lastLineSent = 0;
 
     function sendLines() {
-      console.log("lineCountToSend: %d, lineCountSent: %d, lineBuffer.length: %d", lineCountToSend, lineCountSent, lineBuffer.length);
+      // console.log("lineCountToSend: %d, lineCountSent: %d, lineBuffer.length: %d", lineCountToSend, lineCountSent, lineBuffer.length);
 
-      while (lineBuffer.length > 0 && (lineCountToSend - lineCountSent) > 0) {
+      while (lineBuffer.length > 0 && lineCountToSend-- > 0) {
         var line = lineBuffer.shift();
         self.write(line);
-        self.parseGcode(line, readFileState);
+        lastLineSent = self.parseGcode(line, readFileState);
 
         lineCountSent++;
-        console.log("lineCountToSend: %d, lineCountSent: %d, lineBuffer.length: %d", lineCountToSend, lineCountSent, lineBuffer.length);
+        totalLinesSent++;
+        // console.log("lineCountToSend: %d, lineCountSent: %d, lineBuffer.length: %d", lineCountToSend, lineCountSent, lineBuffer.length);
       }
 
       // if (lineBuffer.length > 200) {
@@ -293,6 +330,8 @@ TinyG.prototype.sendFile = function(filename) {
       // } else if (lineBuffer.length < 20) {
       //   readStream.resume();
       // }
+
+      self.emit('sendBufferChanged', {'lines': nextlineNumber, 'sent': lastLineSent});
     }
 
     readStream.on('data', function(data) {
@@ -316,29 +355,73 @@ TinyG.prototype.sendFile = function(filename) {
         if (line.match(/^\s*$/))
           return;
 
+        if (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) {
+          line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
+          // console.error(line);
+          nextlineNumber++;
+        }
+
         lineBuffer.push(line);
+        totalLineCount++;
       });
 
       sendLines();
     }); // readStream.on('data', ... )
 
+    readStream.on('end', function() {
+      readStream.close();
+    });
 
-    self.on('qrReceived', function(qr) {
-      console.log(qr);
-      if (qr.qi == null && qr.qo == null) {
-        lineCountToSend = qr.qr;
-      }
-      if (qr.qi) {
-        lineCountToSend -= qr.qi;
-      }
-      if (qr.qo) {
-        lineCountToSend += qr.qo;
-      }
+    // self.on('qrReceived', function(qr) {
+    //   // console.log(qr);
+    //   if (qr.qi == null && qr.qo == null) {
+    //     lineCountToSend = qr.qr;
+    //   }
+    //   if (qr.qi) {
+    //     lineCountToSend -= qr.qi;
+    //   }
+    //   if (qr.qo) {
+    //     lineCountToSend += qr.qo;
+    //   }
+    //
+    //   lineCountSent = 0;
+    //
+    //   sendLines();
+    // }); // self.on('qrReceived', ... )
 
-      lineCountSent = 0;
 
-      sendLines();
-    }); // self.on('qrReceived', ... )
+    self.on('statusChanged', function(sr) {
+      // console.log("SR: ", sr);
+
+      // See https://github.com/synthetos/TinyG/wiki/TinyG-Status-Codes#status-report-enumerations
+      //   for more into about stat codes.
+
+      // 3	program stop or no more blocks (M0, M1, M60)
+      // 4	program end via M2, M30
+      if (sr.stat == 3 || sr.stat == 4) {
+        if (sr.line == nextlineNumber-1) {
+          if (callback) {
+            console.warn("DONE!!");
+            callback();
+          }
+        } else {
+          // Prime the pump -- it stalled
+          lineCountToSend += 10;
+          sendLines();
+        }
+
+      // 2	machine is in alarm state (shut down)
+      } else if (sr.stat == 2) {
+        // Fatal error! Shut down!
+        self.close();
+        callback("Fatal error!");
+      } else if (sr.line) {
+        if ((lastLineSent - sr.line) < (linesToStayAhead-lineCountToSend)) {
+          lineCountToSend = linesToStayAhead - (lastLineSent - sr.line);
+          sendLines();
+        }
+      }
+    })
 
   }); // self.on('dataChannelReady', ... )
 };
@@ -353,7 +436,7 @@ function _valueFromString(str) {
 
 TinyG.prototype.parseGcode = function(line, readFileState) {
   var self = this;
-
+  var rawLine = line;
   line = line.replace(/^\s+|\s+$/g, '').replace(/(;.*)|(\(.*?\))| /g , '').toLowerCase();
 
   var attributes = {};
@@ -382,8 +465,10 @@ TinyG.prototype.parseGcode = function(line, readFileState) {
       attributes[attr[0]] = _valueFromString(attr);
     };
 
-    self.emit("sentGcode", {cmd: readFileState.command, values: attributes});
+    self.emit("sentGcode", {cmd: readFileState.command, values: attributes, line:readFileState.line, gcode: rawLine});
   }
+
+  return readFileState.line;
 };
 
 TinyG.prototype.list = function(callback) {
