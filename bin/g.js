@@ -4,6 +4,7 @@
 
 var TinyG = require("../");
 var util = require('util');
+var fs = require('fs');
 var readline = require('readline');
 
 var args = require('nomnom')
@@ -22,7 +23,13 @@ var args = require('nomnom')
       abbr: 'd',
       metavar: 'PORT',
       help: "Name of data serial port. Use -l to see the available ports."
-      },
+    },
+    log: {
+      abbr: 'g',
+      metavar: 'LOGFILE',
+      default: "/dev/null",
+      help: "Name of file to log to. Piping STDERR to a file will do the same thing (and trump this option)."
+    },
     list: {
       abbr: 'l',
       flag: true,
@@ -39,6 +46,17 @@ if (args.help) {
 }
 
 var g = new TinyG();
+var logStream = process.stderr; // We may change this later
+var startTime = new Date();
+
+if (args.log) {
+  logStream = fs.createWriteStream(args.log, 'r+');
+  logStream.write('## Opened log: ' + startTime.toLocaleString() + "\n");
+}
+
+g.on('error', function (err) {
+  logStream.write(err+'\n');
+});
 
 if (args.list) {
   g.list(function (err, results) {
@@ -55,14 +73,13 @@ if (args.list) {
     }
 
     if (results.length == 0) {
-      console.error("No TinyGs found. (Do you maybe need to install FTDI drivers?).");
+      console.log("No TinyGs found. (Do you maybe need to install FTDI drivers?).");
       process.exit(0);
     }
   });
 
 }
 else {
-
   if (!args.port) {
     g.list(function (err, results) {
       if (err) {
@@ -81,19 +98,19 @@ else {
 
         openTinyG();
       } else if (results.length > 1) {
-        console.error("Autodetect found multiple TinyGs:");
+        console.log("Error: Autodetect found multiple TinyGs:");
 
         for (var i = 0; i < results.length; i++) {
           var item = results[i];
           if (item.dataPortPath) {
-            console.error("Found command port: '%s' with data port '%s'.", item.path, item.dataPortPath);
+            console.log("Found command port: '%s' with data port '%s'.", item.path, item.dataPortPath);
           } else {
-            console.error("Found port: '%s'.", item.path);
+            console.log("Found port: '%s'.", item.path);
           }
         }
         process.exit(0);
       } else {
-        console.error("No TinyGs found. (Do you maybe need to install FTDI drivers?).");
+        console.log("No TinyGs found. (Do you maybe need to install FTDI drivers?).");
         process.exit(0);
       }
 
@@ -118,7 +135,7 @@ function openTinyG() {
       rl.prompt();
 
       rl.on('line', function(line) {
-        console.warn(">%s", line);
+        logStream.write(util.format(">%s", line));
         g.write(line);
         rl.prompt(true);
       }).on('close', function() {
@@ -179,35 +196,42 @@ function openTinyG() {
           process.stdout.write(percent)
           process.stdout.write("%")
 
-          if (process.stderr.isTTY) {
-            process.stdout.write("\n")
-          } else {
+          // if (process.stderr.isTTY) {
+          //   process.stdout.write("\n")
+          // } else {
             process.stdout.write("\r")
-          }
+          // }
         }
         // rl.prompt(true);
       });
     }
 
     g.on('data', function(data) {
-      console.warn('<%s', data);
+      logStream.write(util.format('<%s\n', data));
     });
 
     g.on('sentGcode', function(data) {
-      console.warn('>%s', data.gcode);
+      logStream.write(util.format('>%s\n', data.gcode));
     });
 
     g.on('close', function() {
-      console.warn("### Port Closed!!");
-      process.exit(0);
+      logStream.write(util.format("### Port Closed!!\n"));
+
+      if (args.log) {
+        // TODO: Use startTime to determine length of job run
+        logStream.write('## Closing log: ' + (new Date()).toLocaleString() + "\n\n");
+        // logStream.close();
+      }
+
+      // process.exit(0);
     });
 
     if (args.gcode || !process.stdin.isTTY) {
       g.sendFile(args.gcode || process.stdin, function(err) {
         if (err) {
-          console.error("Error returned: %s", err);
+          logStream.write(util.format("Error returned: %s\n", err));
         }
-        console.warn("### Done sending");
+        logStream.write(util.format("### Done sending\n"));
         process.stdout.write("\n")
         rl.close();
         g.close();

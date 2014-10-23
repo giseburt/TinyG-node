@@ -17,6 +17,7 @@ function TinyG() {
   var serialPortData = null;
   this.serialPortData = serialPortData;
 
+
   var readBuffer = "";
   var _tinygParser = function (emitter, buffer) {
     // Collect data
@@ -45,8 +46,8 @@ function TinyG() {
         try {
           jsObject = JSON.parse(part);
         } catch(err) {
-          console.error('### ERROR: ', err);
-          console.error('### ERROR was parsing: ', part);
+          self.emit('error', util.format('### ERROR: ', err));
+          self.emit('error', util.format('### ERROR was parsing: ', part));
           return;
         }
 
@@ -54,19 +55,19 @@ function TinyG() {
         var footer = jsObject.f || (jsObject.r && jsObject.r.f);
         if (footer !== undefined) {
           if (footer[1] == 108) {
-            console.error("ERROR: TinyG reported an syntax error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]);
+            self.emit('error', util.format("ERROR: TinyG reported an syntax error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]));
           }
 
           else if (footer[1] == 20) {
-            console.error("ERROR: TinyG reported an internal error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]);
+            self.emit('error', util.format("ERROR: TinyG reported an internal error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]));
           }
 
           else if (footer[1] == 202) {
-            console.error("ERROR: TinyG reported an TOO SHORT MOVE on line %d", jsObject.r.n);
+            self.emit('error', util.format("ERROR: TinyG reported an TOO SHORT MOVE on line %d", jsObject.r.n));
           }
 
           else if (footer[1] != 0) {
-            console.error("ERROR: TinyG reported an error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]);
+            self.emit('error', util.format("ERROR: TinyG reported an error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]));
           }
 
           // Remove the object so it doesn't get parsed anymore
@@ -154,6 +155,7 @@ TinyG.prototype.open = function (path, options) {
     });
 
     process.nextTick(function() {
+      self.write("M2"); //Reset many settings
       self.write({ee:0}); //Set echo off, it'll confuse the parser
       self.write({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
       self.write({jv:4}); //Set JSON verbosity to 5 (max)
@@ -201,16 +203,16 @@ TinyG.prototype.open = function (path, options) {
 TinyG.prototype.close = function() {
   var self = this;
 
-  // console.error("tinyg.close(): ", self.serialPortControl, self.serialPortData);
+  // self.emit('error', util.format("tinyg.close(): ", self.serialPortControl, self.serialPortData));
 
   if (self.serialPortControl !== null) {
-    // console.error("Closing command channel.");
+    // self.emit('error', util.format("Closing command channel."));
     self.serialPortControl.close();
     self.serialPortControl = null;
   }
 
   if (self.serialPortData !== null) {
-    // console.error("Closing data channel.");
+    // self.emit('error', util.format("Closing data channel."));
     self.serialPortData.close();
     self.serialPortData = null;
   }
@@ -220,7 +222,7 @@ TinyG.prototype.close = function() {
 
 var writeCallback = function (err, results) {
   if (err)
-    console.error("WRITE ERROR: ", err);
+    self.emit('error', util.format("WRITE ERROR: ", err));
 }
 
 TinyG.prototype.write = function(value, callback) {
@@ -233,7 +235,7 @@ TinyG.prototype.write = function(value, callback) {
     return;
 
   if (typeof value !== "string") {
-      // console.error("###WRITEjs: '%s'", JSON.stringify(value))
+      // self.emit('error', util.format("###WRITEjs: '%s'", JSON.stringify(value)))
       self.serialPortControl.write(JSON.stringify(value) + '\n', callback);
   }
   else { // It's a string:
@@ -241,11 +243,11 @@ TinyG.prototype.write = function(value, callback) {
       value = value + "\n";
 
     if (self.serialPortData === null || value.match(/^{}?/)) { // BTW: The optional close bracket is to appears the editor.
-      // console.error("###WRITE: '%s'", value)
+      // self.emit('error', util.format("###WRITE: '%s'", value))
       self.serialPortControl.write(value, callback);
       // self.serialPortControl.drain(writeCallback);
     } else {
-      // console.error("***WRITE: '%s'", value)
+      // self.emit('error', util.format("***WRITE: '%s'", value))
       self.serialPortData.write(value, callback);
     }
   }
@@ -306,7 +308,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
     var linesToStayAhead = 200;
     var lineCountToSend = linesToStayAhead;
     var lineCountSent = 0; // sent since the last qr
-    var lineBuffer = [];
+    var lineBuffer = []; // start it out ensuring that the machine is reset
     var totalLineCount = 0;
     var totalLinesSent = 0;
     var nextlineNumber = 0;
@@ -357,7 +359,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
 
         if (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) {
           line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
-          // console.error(line);
+          // self.emit('error', util.format(line));
           nextlineNumber++;
         }
 
