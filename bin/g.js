@@ -233,8 +233,8 @@ function openTinyG() {
           }
 
           process.stdout.write("| ")
-          var percent = ((st.line/maxLineNumber) * 100).toFixed(0);
-          process.stdout.write(sprintf("%3f%%", percent));
+          var percent = ((st.line/maxLineNumber) * 100);
+          process.stdout.write(sprintf("%3.0f%%", percent));
 
           // if (process.stderr.isTTY) {
           //   process.stdout.write("\n")
