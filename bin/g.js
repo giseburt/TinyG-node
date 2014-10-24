@@ -6,6 +6,21 @@ var TinyG = require("../");
 var util = require('util');
 var fs = require('fs');
 var readline = require('readline');
+var chalk = require('chalk');
+var sprintf = require('sprintf').sprintf;
+
+var STAT_CODES = {
+  0: "Init",
+  1: "Ready",
+  2: "ALARM",
+  3: "Stop",
+  4: "Ended",
+  5: "Running",
+  6: "Hold",
+  7: "Probing",
+  8: "Running Cycle",
+  9: "Homing"
+};
 
 var args = require('nomnom')
   .script("q")
@@ -48,6 +63,9 @@ if (args.help) {
 var g = new TinyG();
 var logStream = process.stderr; // We may change this later
 var startTime = new Date();
+
+// Interactive means that we're not just showing a progress bar but are presenting a full console.
+var interactive = process.stdout.isTTY && process.stdin.isTTY;
 
 if (args.log) {
   logStream = fs.createWriteStream(args.log, 'r+');
@@ -131,12 +149,15 @@ function openTinyG() {
 
     if (process.stdout.isTTY) {
       var rl = readline.createInterface(process.stdin, process.stdout);
-      rl.setPrompt('TinyG# ');
+      rl.setPrompt(chalk.dim('TinyG# '), 'TinyG# '.length);
       rl.prompt();
 
       rl.on('line', function(line) {
         logStream.write(util.format(">%s", line));
         g.write(line);
+        if (interactive) {
+          process.stdout.write(chalk.dim(">"+ line)+"\n");
+        }
         rl.prompt(true);
       }).on('close', function() {
         g.close();
@@ -152,7 +173,33 @@ function openTinyG() {
         maxLineNumber = b.lines;
       });
 
+      var status = {};
+
       g.on('statusChanged', function(st) {
+        for(var prop in st) {
+          status[prop] = st[prop];
+        }
+
+        if (interactive) {
+          readline.moveCursor(process.stdout, 0, -1);
+          readline.clearLine(process.stdout, 0);
+
+          process.stdout.write(
+            sprintf("\rPos: X=%4.2f Y=%4.2f Z=%4.2f A=%4.2f Vel:%4.2f (%s)\n",
+              status.posx||0,
+              status.posy||0,
+              status.posz||0,
+              status.posa||0,
+              status.vel||0,
+              STAT_CODES[status.stat] || 'Stopped'
+            )
+            // util.inspect(status)
+          );
+
+          rl.prompt(true);
+        }
+
+
         if (st.line) {
           if (st.line > maxLineNumber) {
             maxLineNumber = st.line;
@@ -187,14 +234,7 @@ function openTinyG() {
 
           process.stdout.write("| ")
           var percent = ((st.line/maxLineNumber) * 100).toFixed(0);
-          if (percent < 100) {
-            process.stdout.write(" ")
-          }
-          if (percent < 10) {
-            process.stdout.write(" ")
-          }
-          process.stdout.write(percent)
-          process.stdout.write("%")
+          process.stdout.write(sprintf("%3f%%", percent));
 
           // if (process.stderr.isTTY) {
           //   process.stdout.write("\n")
@@ -203,7 +243,8 @@ function openTinyG() {
           // }
         }
         // rl.prompt(true);
-      });
+      }); // if st.line
+
     }
 
     g.on('data', function(data) {
@@ -227,6 +268,7 @@ function openTinyG() {
     });
 
     if (args.gcode || !process.stdin.isTTY) {
+      interactive = false;
       g.sendFile(args.gcode || process.stdin, function(err) {
         if (err) {
           logStream.write(util.format("Error returned: %s\n", err));
