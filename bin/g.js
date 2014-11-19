@@ -91,7 +91,7 @@ if (args.list) {
     }
 
     if (results.length == 0) {
-      console.log("No TinyGs found. (Do you maybe need to install FTDI drivers?).");
+      noTinygFound();
       process.exit(0);
     }
   });
@@ -128,7 +128,7 @@ else {
         }
         process.exit(0);
       } else {
-        console.log("No TinyGs found. (Do you maybe need to install FTDI drivers?).");
+        noTinygFound();
         process.exit(0);
       }
 
@@ -138,13 +138,16 @@ else {
   }
 }
 
+function noTinygFound() {
+  console.log("No TinyGs were found. (Is it connected and drivers are installed?)");
+}
 
 function openTinyG() {
   var opened = false;
 
   g.open(args.port, {dataPortPath : args.dataport});
 
-  g.on('open', function(data) {
+  g.on('open', function() {
     // console.log('#### open');
 
     if (process.stdout.isTTY) {

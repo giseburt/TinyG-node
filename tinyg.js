@@ -220,7 +220,9 @@ TinyG.prototype.close = function() {
   // 'close' event will set self.serialPortControl = null.
 };
 
-var writeCallback = function (err, results) {
+TinyG.prototype.defaultWriteCallback = function (err, results) {
+  var self = this;
+
   if (err)
     self.emit('error', util.format("WRITE ERROR: ", err));
 }
@@ -229,7 +231,7 @@ TinyG.prototype.write = function(value, callback) {
   var self = this;
 
   if (callback === undefined)
-    callback = writeCallback;
+    callback = self.defaultWriteCallback;
 
   if (self.serialPortControl === null)
     return;
@@ -242,7 +244,9 @@ TinyG.prototype.write = function(value, callback) {
     if (value.match(/[\n\r]$/) === null)
       value = value + "\n";
 
-    if (self.serialPortData === null || value.match(/^{}?/)) { // BTW: The optional close bracket is to appears the editor.
+    if (self.serialPortData === null || value.match(/^[{}!~%]/)) {
+      // BTW: The optional close bracket ^^ is to appease the editor.
+
       // self.emit('error', util.format("###WRITE: '%s'", value))
       self.serialPortControl.write(value, callback);
       // self.serialPortControl.drain(writeCallback);
@@ -504,7 +508,7 @@ TinyG.prototype.list = function(callback) {
             x[2] = parseInt(x[2]);
             y[2] = parseInt(y[2]);
 
-            if (((x[2] == 1) && (y[2] == 3)) || (x[2]+1 == y[2])) {
+            if (((x[2] == 1) && (y[2] == 3)) || (x[2]+1 == y[2]) || (x[2]+2 == y[2])) {
               tinygs[tinygs.length-1].dataPortPath = item.comName;
               continue;
             }
