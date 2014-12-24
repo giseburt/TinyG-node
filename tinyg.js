@@ -158,8 +158,10 @@ TinyG.prototype.open = function (path, options) {
       self.write("M2"); //Reset many settings
       self.write({ee:0}); //Set echo off, it'll confuse the parser
       self.write({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
-      self.write({jv:4}); //Set JSON verbosity to 5 (max)
-      self.write({qv:2}); //Set queue report verbosity
+      // self.write({jv:4}); //Set JSON verbosity to 5 (max)
+      self.write({jv:2}); //Set JSON verbosity to 2 (medium)
+      // self.write({qv:2}); //Set queue report verbosity
+      self.write({qv:0}); //Set queue report verbosity (off)
       self.write(
       {
         sr:{
@@ -175,7 +177,15 @@ TinyG.prototype.open = function (path, options) {
           "frmo":true,
           "stat":true,
           "line":true,
-          "gc":true
+          // "gc":true,
+          // "_cs1":true,
+          // "_es1":true,
+          // "_xs1":true,
+          // "_fe1":true,
+          // "_cs2":true,
+          // "_es2":true,
+          // "_xs2":true,
+          // "_fe2":true
         }
       });
 
@@ -307,7 +317,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
     });
 
 
-    self.write({qr:null});
+    // self.write({qr:null});
 
     var linesToStayAhead = 200;
     var lineCountToSend = linesToStayAhead;
