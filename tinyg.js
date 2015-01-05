@@ -154,46 +154,50 @@ TinyG.prototype.open = function (path, options) {
       self.emit("data", data);
     });
 
-    process.nextTick(function() {
-      self.write("M2"); //Reset many settings
-      self.write({ee:0}); //Set echo off, it'll confuse the parser
-      self.write({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
-      // self.write({jv:4}); //Set JSON verbosity to 5 (max)
-      self.write({jv:2}); //Set JSON verbosity to 2 (medium)
-      // self.write({qv:2}); //Set queue report verbosity
-      self.write({qv:0}); //Set queue report verbosity (off)
-      self.write(
-      {
-        sr:{
-          "posx":true,
-          "posy":true,
-          "posz":true,
-          "posa":true,
-          "feed":true,
-          "vel":true,
-          "unit":true,
-          "coor":true,
-          "dist":true,
-          "frmo":true,
-          "stat":true,
-          "line":true,
-          // "gc":true,
-          // "_cs1":true,
-          // "_es1":true,
-          // "_xs1":true,
-          // "_fe1":true,
-          // "_cs2":true,
-          // "_es2":true,
-          // "_xs2":true,
-          // "_fe2":true
-        }
+    if (!options.dontSetup) {
+      process.nextTick(function() {
+        self.write("M2"); //Reset many settings
+        self.write({ee:0}); //Set echo off, it'll confuse the parser
+        self.write({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
+        // self.write({jv:4}); //Set JSON verbosity to 5 (max)
+        self.write({jv:2}); //Set JSON verbosity to 2 (medium)
+        // self.write({qv:2}); //Set queue report verbosity
+        self.write({qv:0}); //Set queue report verbosity (off)
+        self.write(
+        {
+          sr:{
+            "posx":true,
+            "posy":true,
+            "posz":true,
+            "posa":true,
+            "feed":true,
+            "vel":true,
+            "unit":true,
+            "coor":true,
+            "dist":true,
+            "frmo":true,
+            "stat":true,
+            "line":true,
+            // "gc":true,
+            // "_cs1":true,
+            // "_es1":true,
+            // "_xs1":true,
+            // "_fe1":true,
+            // "_cs2":true,
+            // "_es2":true,
+            // "_xs2":true,
+            // "_fe2":true
+          }
+        });
+
+        // get the status report and queue report
+        self.write({sr:null});
+
+        self.emit('open');
       });
-
-      // get the status report and queue report
-      self.write({sr:null});
-
+    } else {
       self.emit('open');
-    })
+    }
   });
 
   self.serialPortControl.on("error", function(err) {
@@ -202,9 +206,6 @@ TinyG.prototype.open = function (path, options) {
 
   self.serialPortControl.on("close", function(err) {
     self.serialPortControl = null;
-
-    // self._status.open = false;
-    // self._status.openPort = null;
 
     self.emit("close", err);
   });
@@ -223,7 +224,7 @@ TinyG.prototype.close = function() {
 
   if (self.serialPortData !== null) {
     // self.emit('error', util.format("Closing data channel."));
-    self.serialPortData.close();
+    // self.serialPortData.close();
     self.serialPortData = null;
   }
 
