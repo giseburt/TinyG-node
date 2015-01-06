@@ -1,6 +1,7 @@
 var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 var fs = require('fs');
+var Q = require('Q');
 
 //var spawn = require('child_process').spawn;
 var SerialPortModule = require("serialport"),
@@ -78,30 +79,19 @@ function TinyG() {
         }
 
         var jsObject = jsObject.r || jsObject;
-        // var changed = null;
-        // console.log(util.inspect(jsObject));
+
+        self.emit("response", jsObject);
+
         if (jsObject.hasOwnProperty('sr')) {
-          // changed = self._mergeIntoState(jsObject.sr);
-          // if (Object.keys(changed).length > 0) {
-          // console.log("SR: ", jsObject.sr);
-            self.emit("statusChanged", jsObject.sr);
-          // }
+          self.emit("statusChanged", jsObject.sr);
         }
         else if (jsObject.hasOwnProperty('gc')) {
           self.emit("gcodeReceived", jsObject.gc);
         }
-        else if (jsObject.hasOwnProperty('qr')) {
+
+        if (jsObject.hasOwnProperty('qr')) {
           self.emit("qrReceived", jsObject); // Send the whole thing -- qr is a sibling of others in the report
         }
-        else {
-          // changed = self._mergeIntoConfiguration(jsObject);
-          // if (Object.keys(changed).length > 0) {
-            self.emit("configChanged", jsObject);
-          // }
-        }
-
-        // console.log("Conf: " + JSON.stringify(self._configuration));
-        // console.log("Stat: " + util.inspect(self._status));
       }
     } // parts.forEach function
     ); // parts.forEach
@@ -442,6 +432,100 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
 
   }); // self.on('dataChannelReady', ... )
 };
+
+TinyG.prototype.get = function(key) {
+  var self = this;
+
+  return self.set(key, null);
+};
+
+
+TinyG.prototype.set = function(key, value) {
+  var self = this;
+
+  // Ok, we handle this differently.
+  // If we are passed an object, such as {jv:1, ee:1} we will loop throught the
+  // top-level keys and "set" each in turn, making a longer and longer promise
+  // chain.
+
+  // However, objects are unordered. So, if you pass it an array of objects,
+  // we will loop through the array in order. So, you can pass this:
+  // [{jv:1}, {qv:1}]
+
+
+  if (util.isArray(key)) {
+    var promiseChain = Q.fcall(function () {}); // Create a dummy promise to start the cahin.
+    for (var k in key) {
+      // We have to artificially create a function context to hold the values
+      // so we make a closure function, assign the variables, and immediately call it.
+      var closure = function (v) {
+        promiseChain = promiseChain.then(function() {
+          return self.set(v);
+        }).catch(function (e) {
+          console.log("Caught error setting ", v, ": ", e);
+          return Q.fcall(function () {});
+        });
+      };
+      closure(key[k]);
+    };
+    return promiseChain;
+
+  } else if (typeof key === 'object') {
+    var promiseChain = Q.fcall(function () {}); // Create a dummy promise to start the cahin.
+    for (var k in key) {
+      // We have to artificially create a function context to hold the values
+      // so we make a closure function, assign the variables, and immediately call it.
+      var closure = function (k, v) {
+        promiseChain = promiseChain.then(function() {
+          return self.set(k, v);
+        }).catch(function (e) {
+          console.log("Caught error setting {", k, ":", v, "}: ", e);
+          return Q.fcall(function () {});
+        });
+      };
+      closure(k, key[k]);
+    };
+    return promiseChain;
+  }
+
+  var deferred = Q.defer();
+
+  var respHandler = function (r) {
+    deferred.notify("got: " + util.inspect(r));
+    if (key in r) {
+      try {
+        deferred.resolve(r[key]);
+      } catch(e) {
+        deferred.reject(e);
+      }
+    }
+  }
+
+  var errHandler = function(e) {
+    deferred.reject(e);
+    // deferred.resolve();
+  }
+
+  self.on('response', respHandler);
+  self.on('error', errHandler);
+  // Uncomment to debug event handler removal
+  // console.log("response l>", util.inspect(self.listeners('response'))); // [ [Function] ]
+  // console.log("error l>", util.inspect(self.listeners('error'))); // [ [Function] ]
+
+  var toSend = {};
+  toSend[key] = value;
+
+  // console.log(">>>", toSend); // uncommment to debug writes
+  self.write(toSend);
+
+  return deferred.promise.finally(function () {
+    self.removeListener('response', respHandler);
+    self.removeListener('error', errHandler);
+  })
+  //.progress(console.log) // uncomment to debug responses
+  .delay(50);
+};
+
 
 var VALID_CMD_LETTERS = ["m","g","t"];
 var ABSOLUTE = 0;
