@@ -47,8 +47,7 @@ function TinyG() {
         try {
           jsObject = JSON.parse(part);
         } catch(err) {
-          self.emit('error', util.format('### ERROR: ', err));
-          self.emit('error', util.format('### ERROR was parsing: ', part));
+          self.emit('error', new TinyGError(util.format('### ERROR: %o parsing %s', err, part), {e: err, part: part}));
           return;
         }
 
@@ -56,26 +55,38 @@ function TinyG() {
         var footer = jsObject.f || (jsObject.r && jsObject.r.f);
         if (footer !== undefined) {
           if (footer[1] == 108) {
-            self.emit('error', util.format("ERROR: TinyG reported an syntax error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]));
+            self.emit('error', new TinyGError(
+              util.format("ERROR: TinyG reported an syntax error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
+              jsObject
+            ));
           }
 
           else if (footer[1] == 20) {
-            self.emit('error', util.format("ERROR: TinyG reported an internal error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]));
+            self.emit('error', new TinyGError(
+              util.format("ERROR: TinyG reported an internal error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
+              jsObject
+            ));
           }
 
           else if (footer[1] == 202) {
-            self.emit('error', util.format("ERROR: TinyG reported an TOO SHORT MOVE on line %d", jsObject.r.n));
+            self.emit('error', new TinyGError(
+              util.format("ERROR: TinyG reported an TOO SHORT MOVE on line %d", jsObject.r.n),
+              jsObject
+            ));
           }
 
           else if (footer[1] != 0) {
-            self.emit('error', util.format("ERROR: TinyG reported an error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]));
+            self.emit('error', new TinyGError(
+              util.format("ERROR: TinyG reported an error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
+              jsObject
+            ));
           }
 
           // Remove the object so it doesn't get parsed anymore
-          delete jsObject.f;
-          if (jsObject.r) {
-            delete jsObject.r.f;
-          }
+          // delete jsObject.f;
+          // if (jsObject.r) {
+          //   delete jsObject.r.f;
+          // }
         }
 
         var jsObject = jsObject.r || jsObject;
@@ -120,6 +131,15 @@ function TinyG() {
 }
 
 util.inherits(TinyG, EventEmitter);
+
+
+function TinyGError(message, data) {
+  this.name = "TinyGError";
+  this.message = message || "TinyG Error: " + util.inspect(data, {depth: null});
+
+  this.data = data;
+};
+util.inherits(TinyGError, Error);
 
 TinyG.prototype.open = function (path, options) {
   var self = this;
@@ -191,7 +211,7 @@ TinyG.prototype.open = function (path, options) {
   });
 
   self.serialPortControl.on("error", function(err) {
-    self.emit("error", {serialPortError:err});
+    self.emit("error", new TinyGError({serialPortError:err}));
   });
 
   self.serialPortControl.on("close", function(err) {
@@ -523,7 +543,7 @@ TinyG.prototype.set = function(key, value) {
     self.removeListener('error', errHandler);
   })
   //.progress(console.log) // uncomment to debug responses
-  .delay(50);
+  ;
 };
 
 
