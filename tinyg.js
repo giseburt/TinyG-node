@@ -2,6 +2,8 @@ var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 var fs = require('fs');
 var Q = require('Q');
+var RJSON = require("relaxed-json");
+
 
 //var spawn = require('child_process').spawn;
 var SerialPortModule = require("serialport"),
@@ -45,9 +47,9 @@ function TinyG() {
 
       if (part[0] == "{" /* make the IDE happy: } */) {
         try {
-          jsObject = JSON.parse(part);
+          jsObject = RJSON.parse(part);
         } catch(err) {
-          self.emit('error', new TinyGError(util.format('### ERROR: %o parsing %s', err, part), {e: err, part: part}));
+          self.emit('error', new TinyGError(util.format('### ERROR: %s parsing %s', err, part), {e: err, part: part}));
           return;
         }
 
@@ -134,7 +136,8 @@ util.inherits(TinyG, EventEmitter);
 
 
 function TinyGError(message, data) {
-  this.name = "TinyGError";
+  Error.call(this);
+  this.name = "TinyGError:";
   this.message = message || "TinyG Error: " + util.inspect(data, {depth: null});
 
   this.data = data;
@@ -211,7 +214,7 @@ TinyG.prototype.open = function (path, options) {
   });
 
   self.serialPortControl.on("error", function(err) {
-    self.emit("error", new TinyGError({serialPortError:err}));
+    self.emit("error", new TinyGError("SerialPort Error: " + util.inspect(err), {serialPortError:err}));
   });
 
   self.serialPortControl.on("close", function(err) {
@@ -278,6 +281,66 @@ TinyG.prototype.write = function(value, callback) {
   }
 };
 
+TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
+  var self = this;
+
+  // This will call write, but hand you back a promise that will be fulfilled
+  // either once fullfilledFunction returns true OR, if fullfilledFunction is
+  // null, when the "stat" in a status report comes back as 3 "STOP".
+
+  // If data is an array, it will call write() for each element of the array.
+
+  var deferred = Q.defer();
+
+  if (fullfilledFunction === undefined || fullfilledFunction === null) {
+    fullfilledFunction = function (r) {
+      if (r && r['sr'] && r['sr']['stat'] && r['sr']['stat'] == 3) {
+        return true;
+      }
+
+      return false;
+    }
+  }
+
+  var respHandler = function (r) {
+    deferred.notify(r);
+    if (fullfilledFunction(r)) {
+      try {
+        deferred.resolve(r);
+      } catch(e) {
+        deferred.reject(e);
+      }
+    }
+  }
+
+  var errHandler = function(e) {
+    deferred.notify(e);
+  }
+
+  self.on('response', respHandler);
+  self.on('error', errHandler);
+  // Uncomment to debug event handler removal
+  // console.log("response l>", util.inspect(self.listeners('response'))); // [ [Function] ]
+  // console.log("error l>", util.inspect(self.listeners('error'))); // [ [Function] ]
+
+
+  if (util.isArray(data)) {
+    data.forEach(function(v) {
+      self.write(v);
+    });
+  } else {
+    // console.log(">>>", toSend); // uncommment to debug writes
+    self.write(data);
+  }
+  return deferred.promise.finally(function () {
+    self.removeListener('response', respHandler);
+    self.removeListener('error', errHandler);
+  })
+  // .progress(console.log) // uncomment to debug responses
+  ;
+};
+
+
 TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
   var self = this;
 
@@ -333,6 +396,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
     var linesToStayAhead = 200;
     var lineCountToSend = linesToStayAhead;
     var lineCountSent = 0; // sent since the last qr
+    var lineInLastSR = 0; // sent since the last qr
     var lineBuffer = []; // start it out ensuring that the machine is reset
     var totalLineCount = 0;
     var totalLinesSent = 0;
@@ -423,12 +487,15 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
       // See https://github.com/synthetos/TinyG/wiki/TinyG-Status-Codes#status-report-enumerations
       //   for more into about stat codes.
 
+      if (sr.line)
+        lineInLastSR = sr.line;
+
       // 3	program stop or no more blocks (M0, M1, M60)
       // 4	program end via M2, M30
       if (sr.stat == 3 || sr.stat == 4) {
-        if (sr.line == nextlineNumber-1) {
+        if (lineInLastSR == nextlineNumber-1) {
           if (callback) {
-            console.warn("DONE!!");
+            // console.warn("DONE!!");
             callback();
           }
         } else {
@@ -450,7 +517,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
       }
     })
 
-  }); // self.on('dataChannelReady', ... )
+  }); // self.on('statusChanged', ... )
 };
 
 TinyG.prototype.get = function(key) {
@@ -652,6 +719,50 @@ TinyG.prototype.list = function(callback) {
   })
 };
 
+
+TinyG.prototype.openFirst = function (failIfMore) {
+  var self = this;
+
+  if (failIfMore === undefined || failIfMore === null) {
+    failIfMore = false;
+  }
+
+  self.list(function (err, results) {
+    if (err) {
+      throw err;
+    }
+
+    if (results.length == 1 || (failIfMore == false && results.length > 0)) {
+      if (results[0].dataPortPath) {
+        return self.open(results[0].path, {dataPortPath : results[0].dataPortPath});
+      } else {
+        return self.open(results[0].path);
+      }
+    } else if (results.length > 1) {
+      var errText = ("Error: Autodetect found multiple TinyGs:\n");
+
+      for (var i = 0; i < results.length; i++) {
+        var item = results[i];
+        if (item.dataPortPath) {
+          errText += ("\tFound command port: '%s' with data port '%s'\n", item.path, item.dataPortPath);
+        } else {
+          errText += ("\tFound port: '%s'\n", item.path);
+        }
+      }
+      throw new TinyGError(errText, results);
+    } else {
+      throw new TinyGError("Error: Autodetect found no connected TinyGs.");
+    }
+
+  });
+}
+
+TinyG.prototype.stripGcode = function (gcode) {
+  gcode = gcode.replace(/^(.*?);\(.*$/gm, "$1");
+  gcode = gcode.replace(/[ \t]/gm, "");
+  gcode = gcode.toUpperCase();
+  return gcode;
+}
 
 // TinyG.prototype.useSocket = function(socket) {
 //   var self = this;

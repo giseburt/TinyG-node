@@ -1,6 +1,6 @@
 {
   "name": "tinyg",
-  "version": "0.3.10",
+  "version": "0.3.12",
   "description": "Node module for controlling TinyG.",
   "main": "tinyg.js",
   "scripts": {
@@ -20,6 +20,7 @@
     "chalk": "^0.5.1",
     "nomnom": "^1.8.0",
     "q": "^1.1.2",
+    "relaxed-json": "^0.2.8",
     "serialport": "git+https://github.com/giseburt/node-serialport.git#master",
     "sprintf": "^0.1.4"
   },

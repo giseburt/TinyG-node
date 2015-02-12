@@ -42,7 +42,7 @@ var args = require('nomnom')
     log: {
       abbr: 'g',
       metavar: 'LOGFILE',
-      default: "/dev/null",
+      //default: "/dev/null",
       help: "Name of file to log to. Piping STDERR to a file will do the same thing (and trump this option)."
     },
     list: {
@@ -95,47 +95,8 @@ if (args.list) {
       process.exit(0);
     }
   });
-
-}
-else {
-  if (!args.port) {
-    g.list(function (err, results) {
-      if (err) {
-        throw err;
-      }
-
-      if (results.length == 1) {
-        if (results[0].dataPortPath) {
-          console.warn("Found command port: '%s' with data port '%s'.", results[0].path, results[0].dataPortPath);
-          args.port = results[0].path;
-          args.dataport = results[0].dataPortPath;
-        } else {
-          console.warn("Found port: '%s'.", results[0].path);
-          args.port = results[0].path;
-        }
-
-        openTinyG();
-      } else if (results.length > 1) {
-        console.log("Error: Autodetect found multiple TinyGs:");
-
-        for (var i = 0; i < results.length; i++) {
-          var item = results[i];
-          if (item.dataPortPath) {
-            console.log("Found command port: '%s' with data port '%s'.", item.path, item.dataPortPath);
-          } else {
-            console.log("Found port: '%s'.", item.path);
-          }
-        }
-        process.exit(0);
-      } else {
-        noTinygFound();
-        process.exit(0);
-      }
-
-    });
-  } else {
-    openTinyG();
-  }
+} else {
+  openTinyG();
 }
 
 function noTinygFound() {
@@ -145,7 +106,11 @@ function noTinygFound() {
 function openTinyG() {
   var opened = false;
 
-  g.open(args.port, {dataPortPath : args.dataport});
+  if (!args.port) {
+    g.openFirst(/*fail if multiple:*/ true);
+  } else {
+    g.open(args.port, {dataPortPath : args.dataport});
+  }
 
   g.on('open', function() {
     // console.log('#### open');
@@ -156,7 +121,7 @@ function openTinyG() {
       rl.prompt();
 
       rl.on('line', function(line) {
-        logStream.write(util.format(">%s", line));
+        logStream.write(util.format(">%s\n", line));
         g.write(line);
         if (interactive) {
           process.stdout.write(chalk.dim(">"+ line)+"\n");
