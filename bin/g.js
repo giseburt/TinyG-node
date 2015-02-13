@@ -8,6 +8,9 @@ var fs = require('fs');
 var readline = require('readline');
 var chalk = require('chalk');
 var sprintf = require('sprintf').sprintf;
+var Q = require('Q');
+var FS = require('fs');
+var readFile = Q.nfbind(FS.readFile);
 
 var STAT_CODES = {
   0: "Init",
@@ -49,6 +52,11 @@ var args = require('nomnom')
       abbr: 'l',
       flag: true,
       help: "Name of data serial port. Use -l to see the available ports."
+    },
+    init: {
+      abbr: 'i',
+      metavar: 'INITFILE',
+      help: "Oprional path of a json file containing the initial settings to pass to the TinyG after connection."
     }
   }).parse();
 
@@ -115,104 +123,130 @@ function openTinyG() {
   g.on('open', function() {
     // console.log('#### open');
 
-    if (process.stdout.isTTY) {
-      var rl = readline.createInterface(process.stdin, process.stdout);
-      rl.setPrompt(chalk.dim('TinyG# '), 'TinyG# '.length);
-      rl.prompt();
+    function completeOpen() {
+      if (process.stdout.isTTY) {
+        var rl = readline.createInterface(process.stdin, process.stdout);
+        rl.setPrompt(chalk.dim('TinyG# '), 'TinyG# '.length);
+        rl.prompt();
 
-      rl.on('line', function(line) {
-        logStream.write(util.format(">%s\n", line));
-        g.write(line);
-        if (interactive) {
-          process.stdout.write(chalk.dim(">"+ line)+"\n");
-        }
-        rl.prompt(true);
-      }).on('close', function() {
-        g.close();
-      });
-
-      var leftText = "Progress |";
-      var rightText = "|   0% ";
-
-      var maxLineNumber = 1;
-
-      // If we call sendfile, this will update us ont he send progress:
-      g.on('sendBufferChanged', function(b) {
-        maxLineNumber = b.lines;
-      });
-
-      var status = {};
-
-      g.on('statusChanged', function(st) {
-        for(var prop in st) {
-          status[prop] = st[prop];
-        }
-
-        if (interactive) {
-          readline.moveCursor(process.stdout, 0, -1);
-          readline.clearLine(process.stdout, 0);
-
-          process.stdout.write(
-            sprintf("\rPos: X=%4.2f Y=%4.2f Z=%4.2f A=%4.2f Vel:%4.2f (%s)\n",
-              status.posx||0,
-              status.posy||0,
-              status.posz||0,
-              status.posa||0,
-              status.vel||0,
-              STAT_CODES[status.stat] || 'Stopped'
-            )
-            // util.inspect(status)
-          );
-
+        rl.on('line', function(line) {
+          logStream.write(util.format(">%s\n", line));
+          g.write(line);
+          if (interactive) {
+            process.stdout.write(chalk.dim(">"+ line)+"\n");
+          }
           rl.prompt(true);
-        }
+        }).on('close', function() {
+          g.close();
+        });
 
+        var leftText = "Progress |";
+        var rightText = "|   0% ";
 
-        if (st.line) {
-          if (st.line > maxLineNumber) {
-            maxLineNumber = st.line;
-          }
-          // clear the whole line.
-          // readline.moveCursor(process.stdout, 0, -1);
-          // readline.clearLine(process.stdout, 0);
-          process.stdout.write("\r");
+        var maxLineNumber = 1;
 
-          var maxWidth = process.stdout.columns;
-          var paddingWidth = leftText.length + rightText.length;
-          var barWidth = (maxWidth - paddingWidth) * (st.line/maxLineNumber);
-          var barLeft = (maxWidth - paddingWidth);
+        // If we call sendfile, this will update us ont he send progress:
+        g.on('sendBufferChanged', function(b) {
+          maxLineNumber = b.lines;
+        });
 
-          process.stdout.write(leftText);
-          // console.error("maxWidth: %d, paddingWidth: %d, sent: %d, lines: %d", maxWidth, paddingWidth, b.sent, b.lines);
-          while (barWidth > 1.0) {
-            process.stdout.write('=');
-            barWidth = barWidth - 1.0;
-            barLeft--;
-          }
-          if (barWidth > 0.6) {
-            process.stdout.write('+');
-            barLeft--;
-          } else if (barWidth > 0.3) {
-            process.stdout.write('-');
-            barLeft--;
-          }
-          while (barLeft-- > 0) {
-            process.stdout.write('_');
+        var status = {};
+
+        g.on('statusChanged', function(st) {
+          for(var prop in st) {
+            status[prop] = st[prop];
           }
 
-          process.stdout.write("| ")
-          var percent = ((st.line/maxLineNumber) * 100);
-          process.stdout.write(sprintf("%3.0f%%", percent));
+          if (interactive) {
+            readline.moveCursor(process.stdout, 0, -1);
+            readline.clearLine(process.stdout, 0);
 
-          // if (process.stderr.isTTY) {
-          //   process.stdout.write("\n")
-          // } else {
-            process.stdout.write("\r")
-          // }
-        }
-        // rl.prompt(true);
-      }); // if st.line
+            process.stdout.write(
+              sprintf("\rPos: X=%4.2f Y=%4.2f Z=%4.2f A=%4.2f Vel:%4.2f (%s)\n",
+                status.posx||0,
+                status.posy||0,
+                status.posz||0,
+                status.posa||0,
+                status.vel||0,
+                STAT_CODES[status.stat] || 'Stopped'
+              )
+              // util.inspect(status)
+            );
 
+            rl.prompt(true);
+          }
+
+
+          if (st.line) {
+            if (st.line > maxLineNumber) {
+              maxLineNumber = st.line;
+            }
+            // clear the whole line.
+            // readline.moveCursor(process.stdout, 0, -1);
+            // readline.clearLine(process.stdout, 0);
+            process.stdout.write("\r");
+
+            var maxWidth = process.stdout.columns;
+            var paddingWidth = leftText.length + rightText.length;
+            var barWidth = (maxWidth - paddingWidth) * (st.line/maxLineNumber);
+            var barLeft = (maxWidth - paddingWidth);
+
+            process.stdout.write(leftText);
+            // console.error("maxWidth: %d, paddingWidth: %d, sent: %d, lines: %d", maxWidth, paddingWidth, b.sent, b.lines);
+            while (barWidth > 1.0) {
+              process.stdout.write('=');
+              barWidth = barWidth - 1.0;
+              barLeft--;
+            }
+            if (barWidth > 0.6) {
+              process.stdout.write('+');
+              barLeft--;
+            } else if (barWidth > 0.3) {
+              process.stdout.write('-');
+              barLeft--;
+            }
+            while (barLeft-- > 0) {
+              process.stdout.write('_');
+            }
+
+            process.stdout.write("| ")
+            var percent = ((st.line/maxLineNumber) * 100);
+            process.stdout.write(sprintf("%3.0f%%", percent));
+
+            // if (process.stderr.isTTY) {
+            //   process.stdout.write("\n")
+            // } else {
+              process.stdout.write("\r")
+            // }
+          }
+          // rl.prompt(true);
+        }); // if st.line
+      }
+
+      if (args.gcode || !process.stdin.isTTY) {
+        interactive = false;
+        g.sendFile(args.gcode || process.stdin, function(err) {
+          if (err) {
+            logStream.write(util.format("Error returned: %s\n", err));
+          }
+          logStream.write(util.format("### Done sending\n"));
+          process.stdout.write("\n")
+          rl.close();
+          g.close();
+        });
+      }
+    }
+
+    if (args.init) {
+
+      readFile(args.init, "utf-8").then(function (text) {
+        return g.set(JSON.parse(text));
+      }).then(function () {
+        completeOpen();
+      });
+
+    } else {
+      completeOpen();
     }
 
     g.on('data', function(data) {
@@ -223,7 +257,13 @@ function openTinyG() {
       logStream.write(util.format('>%s\n', data.gcode));
     });
 
+    // var srBlaster = setInterval(function () {
+    //   logStream.write('>>{sr:n}}\n');
+    //   g.write('{sr:n}\n');
+    // }, 25 /* 40hz */);
+
     g.on('close', function() {
+      // clearInterval(srBlaster);
       logStream.write(util.format("### Port Closed!!\n"));
 
       if (args.log) {
@@ -234,19 +274,6 @@ function openTinyG() {
 
       // process.exit(0);
     });
-
-    if (args.gcode || !process.stdin.isTTY) {
-      interactive = false;
-      g.sendFile(args.gcode || process.stdin, function(err) {
-        if (err) {
-          logStream.write(util.format("Error returned: %s\n", err));
-        }
-        logStream.write(util.format("### Done sending\n"));
-        process.stdout.write("\n")
-        rl.close();
-        g.close();
-      });
-    }
 
     // g.on('stateChanged', function(st) {
     //   console.log("State changed: " + util.inspect(changed));

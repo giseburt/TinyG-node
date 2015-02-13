@@ -169,44 +169,46 @@ TinyG.prototype.open = function (path, options) {
 
     if (!options.dontSetup) {
       process.nextTick(function() {
-        self.write("M2"); //Reset many settings
-        self.write({ee:0}); //Set echo off, it'll confuse the parser
-        self.write({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
-        // self.write({jv:4}); //Set JSON verbosity to 5 (max)
-        self.write({jv:2}); //Set JSON verbosity to 2 (medium)
-        // self.write({qv:2}); //Set queue report verbosity
-        self.write({qv:0}); //Set queue report verbosity (off)
-        self.write(
-        {
-          sr:{
-            "posx":true,
-            "posy":true,
-            "posz":true,
-            "posa":true,
-            "feed":true,
-            "vel":true,
-            "unit":true,
-            "coor":true,
-            "dist":true,
-            "frmo":true,
-            "stat":true,
-            "line":true,
-            // "gc":true,
-            // "_cs1":true,
-            // "_es1":true,
-            // "_xs1":true,
-            // "_fe1":true,
-            // "_cs2":true,
-            // "_es2":true,
-            // "_xs2":true,
-            // "_fe2":true
-          }
+    //     self.write("M2"); //Reset many settings
+    //     self.write({ee:0}); //Set echo off, it'll confuse the parser
+    //     self.write({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
+    //     // self.write({jv:4}); //Set JSON verbosity to 5 (max)
+      var promise = self.set({jv:2}); //Set JSON verbosity to 2 (medium)
+    //     // self.write({qv:2}); //Set queue report verbosity
+    //     self.write({qv:0}); //Set queue report verbosity (off)
+    //     self.write(
+    //     {
+    //       sr:{
+    //         "posx":true,
+    //         "posy":true,
+    //         "posz":true,
+    //         "posa":true,
+    //         "feed":true,
+    //         "vel":true,
+    //         "unit":true,
+    //         "coor":true,
+    //         "dist":true,
+    //         "frmo":true,
+    //         "stat":true,
+    //         "line":true,
+    //         // "gc":true,
+    //         // "_cs1":true,
+    //         // "_es1":true,
+    //         // "_xs1":true,
+    //         // "_fe1":true,
+    //         // "_cs2":true,
+    //         // "_es2":true,
+    //         // "_xs2":true,
+    //         // "_fe2":true
+    //       }
+    //     });
+    //
+    //     // get the status report and queue report
+    //     self.write({sr:null});
+    //
+        promise = promise.then(function () {
+          self.emit('open');
         });
-
-        // get the status report and queue report
-        self.write({sr:null});
-
-        self.emit('open');
       });
     } else {
       self.emit('open');
@@ -571,6 +573,22 @@ TinyG.prototype.set = function(key, value) {
         });
       };
       closure(k, key[k]);
+    };
+    return promiseChain;
+  } else if (typeof value === 'object') {
+    var promiseChain = Q.fcall(function () {}); // Create a dummy promise to start the cahin.
+    for (var k in value) {
+      // We have to artificially create a function context to hold the values
+      // so we make a closure function, assign the variables, and immediately call it.
+      var closure = function (k, v) {
+        promiseChain = promiseChain.then(function() {
+          return self.set(k, v);
+        }).catch(function (e) {
+          console.log("Caught error setting {", k, ":", v, "}: ", e);
+          return Q.fcall(function () {});
+        });
+      };
+      closure(key+k, value[k]);
     };
     return promiseChain;
   }
