@@ -8,7 +8,11 @@ A commmand-line utility and library module to abstract communications and contro
 First install the tinyg npm globally, so it'll be in your path:
 
 ```bash
-  npm install -g tinyg
+  # If you run as root you can remove sudo
+  sudo npm install -g tinyg
+
+  ## Since upsteam node-serialport hasn't yet released with a few important fixes, you need:
+  sudo npm install -g tinyg --build-from-source
 ```
 
 Now you can just execute the `g` command to get a full "terminal" experience to TinyG. If there is only one TinyG attached, then you don't need to provide any more parameters:
