@@ -20,6 +20,8 @@ function TinyG() {
   var serialPortData = null;
   this.serialPortData = serialPortData;
 
+  var inHold = false;
+  self.inHold = inHold;
 
   var readBuffer = "";
   var _tinygParser = function (emitter, buffer) {
@@ -54,46 +56,48 @@ function TinyG() {
         }
 
         // We have to look in r/f for the footer due to a bug in TinyG...
-        var footer = jsObject.f || (jsObject.r && jsObject.r.f);
-        if (footer !== undefined) {
-          if (footer[1] == 108) {
-            self.emit('error', new TinyGError(
-              util.format("ERROR: TinyG reported an syntax error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
-              jsObject
-            ));
+        if (jsObject.hasOwnProperty('r')) {
+          var footer = jsObject.f || (jsObject.r && jsObject.r.f);
+          if (footer !== undefined) {
+            if (footer[1] == 108) {
+              self.emit('error', new TinyGError(
+                util.format("ERROR: TinyG reported an syntax error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
+                jsObject
+              ));
+            }
+
+            else if (footer[1] == 20) {
+              self.emit('error', new TinyGError(
+                util.format("ERROR: TinyG reported an internal error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
+                jsObject
+              ));
+            }
+
+            else if (footer[1] == 202) {
+              self.emit('error', new TinyGError(
+                util.format("ERROR: TinyG reported an TOO SHORT MOVE on line %d", jsObject.r.n),
+                jsObject
+              ));
+            }
+
+            else if (footer[1] != 0) {
+              self.emit('error', new TinyGError(
+                util.format("ERROR: TinyG reported an error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
+                jsObject
+              ));
+            }
+
+            // Remove the object so it doesn't get parsed anymore
+            // delete jsObject.f;
+            // if (jsObject.r) {
+            //   delete jsObject.r.f;
+            // }
           }
 
-          else if (footer[1] == 20) {
-            self.emit('error', new TinyGError(
-              util.format("ERROR: TinyG reported an internal error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
-              jsObject
-            ));
-          }
+          self.emit("response", jsObject.r, footer);
 
-          else if (footer[1] == 202) {
-            self.emit('error', new TinyGError(
-              util.format("ERROR: TinyG reported an TOO SHORT MOVE on line %d", jsObject.r.n),
-              jsObject
-            ));
-          }
-
-          else if (footer[1] != 0) {
-            self.emit('error', new TinyGError(
-              util.format("ERROR: TinyG reported an error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
-              jsObject
-            ));
-          }
-
-          // Remove the object so it doesn't get parsed anymore
-          // delete jsObject.f;
-          // if (jsObject.r) {
-          //   delete jsObject.r.f;
-          // }
+          jsObject = jsObject.r;
         }
-
-        var jsObject = jsObject.r || jsObject;
-
-        self.emit("response", jsObject);
 
         if (jsObject.hasOwnProperty('sr')) {
           self.emit("statusChanged", jsObject.sr);
@@ -102,9 +106,13 @@ function TinyG() {
           self.emit("gcodeReceived", jsObject.gc);
         }
 
-        if (jsObject.hasOwnProperty('qr')) {
-          self.emit("qrReceived", jsObject); // Send the whole thing -- qr is a sibling of others in the report
+        if (jsObject.hasOwnProperty('rx')) {
+          self.emit("rxReceived", jsObject.rx);
         }
+
+        // if (jsObject.hasOwnProperty('qr')) {
+        //   self.emit("qrReceived", jsObject, footer); // Send the whole thing -- qr is a sibling of others in the report
+        // }
       }
     } // parts.forEach function
     ); // parts.forEach
@@ -173,7 +181,7 @@ TinyG.prototype.open = function (path, options) {
     //     self.write({ee:0}); //Set echo off, it'll confuse the parser
     //     self.write({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
     //     // self.write({jv:4}); //Set JSON verbosity to 5 (max)
-      var promise = self.set({jv:2}); //Set JSON verbosity to 2 (medium)
+      var promise = self.set({jv:5}); //Set JSON verbosity to 2 (medium)
     //     // self.write({qv:2}); //Set queue report verbosity
     //     self.write({qv:0}); //Set queue report verbosity (off)
     //     self.write(
@@ -206,6 +214,9 @@ TinyG.prototype.open = function (path, options) {
     //     // get the status report and queue report
     //     self.write({sr:null});
     //
+        promise = promise.then(function () {
+          return self.set({rxm:1}); // Set "packet mode"
+        });
         promise = promise.then(function () {
           self.emit('open');
         });
@@ -374,148 +385,155 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
       self.serialPortData = null;
     });
   } else {
-    self.emit("dataChannelReady");
+    process.nextTick(function() {
+      self.emit("dataChannelReady");
+    });
   }
 
   self.on('dataChannelReady', function () {
     var readStream;
     if (typeof filename_or_stdin == 'string') {
-      console.warn("Opening file '%s' for streaming.", filename_or_stdin)
+      // console.warn("Opening file '%s' for streaming.", filename_or_stdin)
       readStream = fs.createReadStream(filename_or_stdin);
     } else {
       readStream = filename_or_stdin;
       readStream.resume();
     }
 
+    readStream.setEncoding('utf8');
+
     readStream.on('error', function(err) {
       console.log(err);
       throw err;
     });
 
+    self.write({rx:null});
 
-    // self.write({qr:null});
-
-    var linesToStayAhead = 200;
-    var lineCountToSend = linesToStayAhead;
-    var lineCountSent = 0; // sent since the last qr
-    var lineInLastSR = 0; // sent since the last qr
+    var lineCountToSend = 0;
     var lineBuffer = []; // start it out ensuring that the machine is reset
-    var totalLineCount = 0;
-    var totalLinesSent = 0;
-    var nextlineNumber = 0;
-    var lastLineSent = 0;
+    var nextlineNumber = 1;
+    var lineInLastSR = 0;
+    var doneReading = false;
+    var doneSending = false;
 
     function sendLines() {
-      // console.log("lineCountToSend: %d, lineCountSent: %d, lineBuffer.length: %d", lineCountToSend, lineCountSent, lineBuffer.length);
+      var data;
+      data = readStream.read(4 * 1024); // read in 4K chunks
+      if (data && data.length > 0) {
+        readBuffer += data.toString();
 
-      while (lineBuffer.length > 0 && lineCountToSend-- > 0) {
+        // Split collected data by line endings
+        var lines = readBuffer.split(/(\r\n|\r|\n)+/);
+
+        // If there is leftover data,
+        readBuffer = lines.pop();
+
+        readFileState = {};
+
+        lines.forEach(function (line) {
+          // Cleanup and remove blank or all-whitespace lines.
+          // TODO:
+          // * Handle relative QRs (when available)
+          // * Ability to stop or pause
+          // * Rewrite and map line numbers
+
+          if (line.match(/^\s*$/))
+            return;
+
+          if (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) {
+            line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
+            // self.emit('error', util.format(line));
+            nextlineNumber++;
+          }
+
+          lineBuffer.push(line);
+        });
+      }
+
+      var lastLineSent = 0;
+
+      while (lineBuffer.length > 0 && lineCountToSend > 0) {
         var line = lineBuffer.shift();
         self.write(line);
         lastLineSent = self.parseGcode(line, readFileState);
-
-        lineCountSent++;
-        totalLinesSent++;
-        // console.log("lineCountToSend: %d, lineCountSent: %d, lineBuffer.length: %d", lineCountToSend, lineCountSent, lineBuffer.length);
+        lineCountToSend--;
       }
 
-      // if (lineBuffer.length > 200) {
-      //   readStream.pause();
-      // } else if (lineBuffer.length < 20) {
-      //   readStream.resume();
-      // }
+      if (doneReading && lineCountToSend <= 0) {
+        doneSending = true;
+      }
+
+      // console.log("-lineCountToSend: ", lineCountToSend);
 
       self.emit('sendBufferChanged', {'lines': nextlineNumber, 'sent': lastLineSent});
     }
 
-    readStream.on('data', function(data) {
-      readBuffer += data.toString();
-
-      // Split collected data by line endings
-      var lines = readBuffer.split(/(\r\n|\r|\n)+/);
-
-      // If there is leftover data,
-      readBuffer = lines.pop();
-
-      readFileState = {};
-
-      lines.forEach(function (line) {
-        // Cleanup and remove blank or all-whitespace lines.
-        // TODO:
-        // * Handle relative QRs (when available)
-        // * Ability to stop or pause
-        // * Rewrite and map line numbers
-
-        if (line.match(/^\s*$/))
-          return;
-
-        if (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) {
-          line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
-          // self.emit('error', util.format(line));
-          nextlineNumber++;
-        }
-
-        lineBuffer.push(line);
-        totalLineCount++;
-      });
-
+    readStream.on('readable', function() {
       sendLines();
-    }); // readStream.on('data', ... )
+    }); // readStream.on('readable', ... )
 
     readStream.on('end', function() {
       readStream.close();
+      doneReading = true;
     });
 
-    // self.on('qrReceived', function(qr) {
-    //   // console.log(qr);
-    //   if (qr.qi == null && qr.qo == null) {
-    //     lineCountToSend = qr.qr;
-    //   }
-    //   if (qr.qi) {
-    //     lineCountToSend -= qr.qi;
-    //   }
-    //   if (qr.qo) {
-    //     lineCountToSend += qr.qo;
-    //   }
-    //
-    //   lineCountSent = 0;
-    //
-    //   sendLines();
-    // }); // self.on('qrReceived', ... )
+    self.on('response', function(r) {
+      if (r.hasOwnProperty("rx")) {
+        lineCountToSend = r.rx - 1;
+        // -1 is okay, that just means wait until we've sent two lines to send again
+      } else {
+        lineCountToSend++;
+      }
+
+      // console.log("response: %s lineCountToSend: ", util.inspect(r), lineCountToSend);
+
+      sendLines();
+    }); // self.on('response', ... )
 
 
     self.on('statusChanged', function(sr) {
       // console.log("SR: ", sr);
 
+      if (sr.line) {
+        lineInLastSR = sr.line;
+      }
+
       // See https://github.com/synthetos/TinyG/wiki/TinyG-Status-Codes#status-report-enumerations
       //   for more into about stat codes.
-
-      if (sr.line)
-        lineInLastSR = sr.line;
 
       // 3	program stop or no more blocks (M0, M1, M60)
       // 4	program end via M2, M30
       if (sr.stat == 3 || sr.stat == 4) {
-        if (lineInLastSR == nextlineNumber-1) {
+        if (doneSending && lineInLastSR == nextlineNumber-1) {
           if (callback) {
             // console.warn("DONE!!");
             callback();
           }
-        } else {
-          // Prime the pump -- it stalled
-          lineCountToSend += 10;
-          sendLines();
         }
 
       // 2	machine is in alarm state (shut down)
       } else if (sr.stat == 2) {
         // Fatal error! Shut down!
-        self.close();
-        callback("Fatal error!");
-      } else if (sr.line) {
-        if ((lastLineSent - sr.line) < (linesToStayAhead-lineCountToSend)) {
-          lineCountToSend = linesToStayAhead - (lastLineSent - sr.line);
-          sendLines();
+        if (callback) {
+          // console.warn("DONE!!");
+          callback(sr);
+        } else {
+          self.close();
+          callback("Fatal error!");
         }
+
+      // 6 is holding
+      } else if (sr.stat == 6) {
+        // pause sending
+        lineCountToSend = 0;
+        self.inHold = true;
+
+      // 5 is running -- check to make sure we weren't in hold
+    } else if (sr.stat == 5 && self.inHold == true) {
+        self.inHold = false;
+
+        // request a new rx object to determine how many lines to send
+        self.write({rx:null});
       }
     })
 

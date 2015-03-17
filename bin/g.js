@@ -129,6 +129,45 @@ function openTinyG() {
         rl.setPrompt(chalk.dim('TinyG# '), 'TinyG# '.length);
         rl.prompt();
 
+        // WARNING WARNING WARNING -- using the internals of node readline!!
+        //
+        // We need to override the default behavior for a few keys.
+        // So, we tell stdin to REMOVE all of the listeners to the 'keypress'
+        // event, then we will be the only listener. If we don't have a special
+        // behavior for the pressed key, then we pass it on to the readline.
+        //
+        // To avoid using internals too much, we'll snarf in the listeners,
+        // store them away, and then call them ourselves.
+        var old_keypress_listeners = process.stdin.listeners('keypress');
+
+        process.stdin.removeAllListeners('keypress');
+        process.stdin.on('keypress', function (ch, k) {
+          if (k && k.ctrl) {
+            if (k.name == 'd') {
+              // TODO: verify that we are sending a file
+              logStream.write(util.format(">>^d\n"));
+              g.write('\x04'); // send the ^d
+              return;
+            } else
+            if (k.name == 'c') {
+              // TODO: verify that we are sending a file
+              logStream.write(util.format(">>!\n"));
+              g.write('!');
+              return;
+            }
+
+          // Single character commands get sent immediately
+          } else if (ch.match(/^[!~%]/)) {
+            logStream.write(util.format(">>%s\n", ch));
+            g.write(ch);
+            return;
+          }
+
+          for (var i = 0; i < old_keypress_listeners.length; i++) {
+            old_keypress_listeners[i](ch,k);
+          }
+        })
+
         rl.on('line', function(line) {
           logStream.write(util.format(">%s\n", line));
           g.write(line);
@@ -136,19 +175,21 @@ function openTinyG() {
             process.stdout.write(chalk.dim(">"+ line)+"\n");
           }
           rl.prompt(true);
-        }).on('close', function() {
+        });
+
+        rl.on('close', function() {
           g.close();
         });
 
         var leftText = "Progress |";
         var rightText = "|   0% ";
 
-        var maxLineNumber = 1;
+        var maxLineNumber = 0;
 
-        // If we call sendfile, this will update us ont he send progress:
-        g.on('sendBufferChanged', function(b) {
-          maxLineNumber = b.lines;
-        });
+        // If we call sendfile, this will update us on the send progress:
+        // g.on('sendBufferChanged', function(b) {
+        //   maxLineNumber = b.lines;
+        // });
 
         var status = {};
 
@@ -170,7 +211,9 @@ function openTinyG() {
                 status.vel||0,
                 STAT_CODES[status.stat] || 'Stopped'
               )
-              // util.inspect(status)
+            );
+            process.stdout.write(
+              util.inspect(status) + "\n"
             );
 
             rl.prompt(true);
@@ -225,15 +268,55 @@ function openTinyG() {
 
       if (args.gcode || !process.stdin.isTTY) {
         interactive = false;
-        g.sendFile(args.gcode || process.stdin, function(err) {
-          if (err) {
-            logStream.write(util.format("Error returned: %s\n", err));
-          }
-          logStream.write(util.format("### Done sending\n"));
-          process.stdout.write("\n")
-          rl.close();
-          g.close();
-        });
+
+        function startSendFile() {
+          g.sendFile(args.gcode || process.stdin, function(err) {
+            if (err) {
+              logStream.write(util.format("Error returned: %s\n", err));
+            }
+            logStream.write(util.format("### Done sending\n"));
+            process.stdout.write("\n")
+            rl.close();
+            g.close();
+          });
+        }
+
+        if (args.gcode) {
+          var readStream = fs.createReadStream(args.gcode);
+          readStream.once('open', function () {
+            var readBuffer = '';
+
+            readStream.setEncoding('utf8');
+
+            readStream.once('end', function () {
+              readStream.close();
+            });
+
+            readStream.once('close', function () {
+              startSendFile();
+            });
+
+            readStream.on('data', function (data) {
+              readBuffer += data.toString();
+
+              // Split collected data by line endings
+              var lines = readBuffer.split(/(\r\n|\r|\n)+/);
+
+              // If there is leftover data,
+              readBuffer = lines.pop();
+
+              lines.forEach(function (line) {
+                if (line.match(/^\s*$/))
+                  return;
+                
+                maxLineNumber++;
+            });
+          });
+        } // args.gcode
+        else {
+          startSendFile();
+        }
+
       }
     }
 
