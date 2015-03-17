@@ -575,22 +575,22 @@ TinyG.prototype.set = function(key, value) {
       closure(k, key[k]);
     };
     return promiseChain;
-  } else if (typeof value === 'object') {
-    var promiseChain = Q.fcall(function () {}); // Create a dummy promise to start the cahin.
-    for (var k in value) {
-      // We have to artificially create a function context to hold the values
-      // so we make a closure function, assign the variables, and immediately call it.
-      var closure = function (k, v) {
-        promiseChain = promiseChain.then(function() {
-          return self.set(k, v);
-        }).catch(function (e) {
-          console.log("Caught error setting {", k, ":", v, "}: ", e);
-          return Q.fcall(function () {});
-        });
-      };
-      closure(key+k, value[k]);
-    };
-    return promiseChain;
+  // } else if (typeof value === 'object') {
+  //   var promiseChain = Q.fcall(function () {}); // Create a dummy promise to start the cahin.
+  //   for (var k in value) {
+  //     // We have to artificially create a function context to hold the values
+  //     // so we make a closure function, assign the variables, and immediately call it.
+  //     var closure = function (k, v) {
+  //       promiseChain = promiseChain.then(function() {
+  //         return self.set(k, v);
+  //       }).catch(function (e) {
+  //         console.log("Caught error setting {", k, ":", v, "}: ", e);
+  //         return Q.fcall(function () {});
+  //       });
+  //     };
+  //     closure(key+k, value[k]);
+  //   };
+  //   return promiseChain;
   }
 
   var deferred = Q.defer();
