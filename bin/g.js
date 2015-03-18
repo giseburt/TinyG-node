@@ -26,7 +26,7 @@ var STAT_CODES = {
 };
 
 var args = require('nomnom')
-  .script("q")
+  .script("g")
   .options({
     gcode: {
       position: 0,
@@ -96,7 +96,6 @@ if (args.list) {
 
     for (var i = 0; i < results.length; i++) {
       var item = results[i];
-      // console.log('%s -- %s "%s"', item.comName, item.pnpId, item.manufacturer);
       console.log(util.inspect(item));
     }
 
@@ -175,7 +174,7 @@ function openTinyG() {
             }
 
           // Single character commands get sent immediately
-          } else if (ch.match(/^[!~%]/)) {
+        } else if (ch && ch.match(/^[!~%]/)) {
             logStream.write(util.format(">>%s\n", ch));
             g.write(ch);
             return;
@@ -201,11 +200,6 @@ function openTinyG() {
 
         var leftText = "Progress |";
         var rightText = "|   0% ";
-
-        // If we call sendfile, this will update us on the send progress:
-        // g.on('sendBufferChanged', function(b) {
-        //   maxLineNumber = b.lines;
-        // });
 
         var status = {};
 
@@ -367,11 +361,6 @@ function openTinyG() {
       logStream.write(util.format('>%s\n', data.gcode));
     });
 
-    // var srBlaster = setInterval(function () {
-    //   logStream.write('>>{sr:n}}\n');
-    //   g.write('{sr:n}\n');
-    // }, 25 /* 40hz */);
-
     g.on('close', function() {
       // clearInterval(srBlaster);
       logStream.write(util.format("### Port Closed!!\n"));
@@ -384,15 +373,5 @@ function openTinyG() {
 
       // process.exit(0);
     });
-
-    // g.on('stateChanged', function(st) {
-    //   console.log("State changed: " + util.inspect(changed));
-    //
-    //   if (opened && changed.stat == 4) {
-    //     console.log("Closing");
-    //     g.close();
-    //   }
-    //   opened = true;
-    // });
   });
 }
