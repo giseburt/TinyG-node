@@ -159,26 +159,27 @@ TinyG.prototype.open = function (path, options) {
   self.dataPortPath = options.dataPortPath;
   self.serialPortControl = new SerialPort(path, options);
 
-  self.serialPortControl.on("open", function () {
-    // self._status.open = true;
-    // self._status.openPort = path;
+  var _onControlData = function(data) {
+    self.emit('data', data);
+  };
 
-    // spawn('/bin/stty', ['-f', path, 'crtscts']);
-    self.serialPortControl.on('data', function(data) {
-      self.emit("data", data);
-    });
+  self.serialPortControl.once('open', function () {
+    self.serialPortControl.on('data', _onControlData);
 
     self._open_second_channel(!options.dontSetup);
   });
 
-  self.serialPortControl.on("error", function(err) {
-    self.emit("error", new TinyGError("SerialPort Error: " + util.inspect(err), {serialPortError:err}));
-  });
+  var _onControlError = function(err) {
+    self.emit('error', new TinyGError("SerialPort Error: " + util.inspect(err), {serialPortError:err}));
+  };
 
-  self.serialPortControl.on("close", function(err) {
+  self.serialPortControl.on('error', _onControlError);
+
+  self.serialPortControl.once('close', function(err) {
+    self.serialPortControl.removeListener('data', _onControlData);
+    self.serialPortControl.removeListener('error', _onControlError);
     self.serialPortControl = null;
-
-    self.emit("close", err);
+    self.emit('close', err);
   });
 }; // open
 
@@ -188,22 +189,27 @@ TinyG.prototype._open_second_channel = function (doSetup) {
   if (self.dataPortPath) {
     self.serialPortData = new SerialPort(self.dataPortPath, self._baseOptions);
 
-    self.serialPortData.on("open", function () {
-      self.serialPortData.on('data', function(data) {
-        // This should NEVER happen!!
-        // The data channel should never get data back.
-        self.emit("data", data);
-      });
+    var _dataOnData = function(data) {
+      // This should NEVER happen!!
+      // The data channel should never get data back.
+      self.emit('data', data);
+    };
 
+    self.serialPortData.once('open', function () {
+      self.serialPortData.on('data', _dataOnData);
       self._complete_open(doSetup)
     });
 
-    self.serialPortData.on("error", function(err) {
-      self.emit("error", {serialPortDataError:err});
-    });
+    var _onDataError = function(err) {
+      self.emit('error', {serialPortDataError:err});
+    };
 
-    self.serialPortData.on("close", function(err) {
+    self.serialPortData.on('error', _onDataError);
+
+    self.serialPortData.once("close", function(err) {
       self.serialPortData = null;
+      self.serialPortData.removeListener('data', _dataOnData);
+      self.serialPortData.removeListener('error', _onDataError);
     });
   } else {
     process.nextTick(function() {
@@ -271,17 +277,13 @@ TinyG.prototype._complete_open = function (doSetup) {
 
   self.write({rx:null});
 
-  self.on('response', function(r) {
-    // console.log("self.ignoredResponses: " + self.ignoredResponses);
-
+  var _onResponse = function(r) {
     if (r.hasOwnProperty("rx")) {
       self.ignoredResponses--;
-      // console.log("self.ignoredResponses: " + self.ignoredResponses);
       self.lineCountToSend = r.rx - 1;
       // -1 is okay, that just means wait until we've sent two lines to send again
     } else if (self.ignoredResponses > 0) {
       self.ignoredResponses--;
-      // console.log("self.ignoredResponses: " + self.ignoredResponses);
       return;
     } else {
       self.lineCountToSend++;
@@ -292,9 +294,10 @@ TinyG.prototype._complete_open = function (doSetup) {
     if (self.lineCountToSend > 0){
       self._sendLines();
     }
-  }); // self.on('response', ... )
+  }; // _onResponse
+  self.on('response', _onResponse);
 
-  self.on('statusChanged', function(sr) {
+  var _onStatusChanged = function(sr) {
     if (sr.line) {
       self.lineInLastSR = sr.line;
     }
@@ -327,7 +330,14 @@ TinyG.prototype._complete_open = function (doSetup) {
       // request a new rx object to determine how many lines to send
       // self.write({rx:null});
     }
-  });  // self.on('statusChanged', ... )
+  };  // _onStatusChanged
+  self.on('statusChanged', _onStatusChanged);
+
+  // Make sure we clean up when we close...
+  self.once('close', function () {
+    self.removeListener('response', _onResponse);
+    self.removeListener('statusChanged', _onStatusChanged);
+  });
 };
 
 // Internal use only, but persistent
@@ -382,9 +392,18 @@ TinyG.prototype.write = function(value) {
   var self = this;
 
   // Specials bypass the buffer!
-  if (typeof value !== "string" || value.match(/^[{}!~]$/)) {
-    console.log("ignoring: " + util.inspect(value));
-    self.ignoredResponses++;
+  if (typeof value !== "string" || value.match(/^[{}!~%\x03\x04]$/)) {
+    if (typeof value === "string" && value.match(/^%$/)) {
+      if (!self.inHold) {
+        // If we get a % by itself, and we're NOT in hold, it's a comment,
+        // toss it.
+        return;
+      }
+    }
+    // We don't get a response for single-character codes, so don't ignore them...
+    if (typeof value !== "string" || !value.match(/^[!~%\x03\x04]$/)) {
+      self.ignoredResponses++;
+    }
     self._write(value);
     return;
   }
@@ -621,6 +640,14 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
     // 3	program stop or no more blocks (M0, M1, M60)
     // 4	program end via M2, M30
     if (sr.stat == 3 || sr.stat == 4) {
+      if (sr.stat == 4) {
+        if (!doneSending) {
+        readStream.close();
+        fileEnded = true;
+        }
+        doneSending = true;
+      }
+
       if (doneSending) {
         _finish();
       } else {

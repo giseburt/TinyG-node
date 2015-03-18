@@ -12,6 +12,8 @@ var Q = require('Q');
 var FS = require('fs');
 var readFile = Q.nfbind(FS.readFile);
 
+var rl = null; // placeholder for readline object
+
 var STAT_CODES = {
   0: "Init",
   1: "Ready",
@@ -82,8 +84,23 @@ if (args.log) {
   logStream.write('## Opened log: ' + startTime.toLocaleString() + "\n");
 }
 
+function log(x) {
+  if (logStream !== process.stderr) {
+    logStream.write(x);
+  }
+}
+
+function log_c(x) {
+  if (interactive) {
+    if (!x.match(/\n$/)) {
+      x = x + "\n";
+    }
+    process.stdout.write(x);
+  }
+}
+
 g.on('error', function (err) {
-  logStream.write(err+'\n');
+  log(err+'\n');
 });
 
 if (args.list) {
@@ -96,7 +113,7 @@ if (args.list) {
 
     for (var i = 0; i < results.length; i++) {
       var item = results[i];
-      console.log(util.inspect(item));
+      log_c(util.inspect(item));
     }
 
     if (results.length == 0) {
@@ -109,7 +126,126 @@ if (args.list) {
 }
 
 function noTinygFound() {
-  console.log("No TinyGs were found. (Is it connected and drivers are installed?)");
+  log_c("No TinyGs were found. (Is it connected and drivers are installed?)");
+}
+
+
+function parseCommand(line) {
+  if (interactive) {
+    // all commands start with a ., or are single-letter on a line...
+    var cmd_in;
+    if (cmd_in = line.match(/^\s*\.([a-z]+)(?:\s+(.*))?\s*$/i)) {
+      var cmd = cmd_in[1].toLowerCase();
+      var args = cmd_in[2];
+
+      log_c(util.format("Got cmd '%s' and args '%s'", cmd, args));
+
+      if (cmd.match(/^q(uit)?$/)) {
+        var e = util.format("## Recieved QUIT command in State '%s' -- sending CTRL-D and exiting.\n", STAT_CODES[latestMotionStatus]);
+        log(e);
+        if (interactive) {
+          process.stdout.write(chalk.dim(e));
+        }
+        tryToQuit();
+      } else if (cmd.match(/^s(end)?$/)) {
+        if (sendingFile) {
+          process.stdout.write(chalk.red("Unable to send a file -- already sending a file.")+"\n");
+        } else {
+          process.stdout.write(chalk.dim("Send file: " + args)+"\n");
+          sendFile(args);
+        }
+      }
+
+      return;
+    }
+  }
+
+  log(util.format(">%s\n", line));
+  g.write(line);
+  if (interactive) {
+    log_c(chalk.dim(">"+ line)+"\n");
+  }
+}
+
+function tryToQuit() {
+  // TODO: verify that we are sending a file
+
+  if (STAT_CODES[latestMotionStatus].match(/^(Hold|Init|Stop|End)$/)) {
+    // g.write('\x04'); // send the ^d
+    if (rl !== null) {
+      rl.close();
+      // rl = null;
+    }
+
+    g.close();
+
+    return;
+  } else if (STAT_CODES[latestMotionStatus].match(/^(Run|Probing$|Homing$)/)) {
+    g.write('!');
+    return;
+  }
+}
+
+function sendFile(fileName) {
+  interactive = false;
+
+  function startSendFile() {
+    sendingFile = true;
+    g.sendFile(fileName || process.stdin, function(err) {
+      if (err) {
+        log(util.format("Error returned: %s\n", err));
+      }
+      log(util.format("### Done sending\n"));
+      log_c(util.format("### Done sending\n"));
+      process.stdout.write("\n")
+
+      sendingFile = false;
+      g.close();
+    });
+  }
+
+  if (fileName) {
+    var readStream = fs.createReadStream(fileName);
+    readStream.once('open', function () {
+      maxLineNumber = 0;
+
+      var readBuffer = '';
+
+      readStream.setEncoding('utf8');
+
+      readStream.once('end', function () {
+        readStream.close();
+      });
+
+      readStream.once('close', function () {
+        startSendFile();
+      });
+
+      readStream.on('data', function (data) {
+        readBuffer += data.toString();
+
+        // Split collected data by line endings
+        var lines = readBuffer.split(/(\r\n|\r|\n)+/);
+
+        // If there is leftover data,
+        readBuffer = lines.pop();
+
+        lines.forEach(function (line) {
+          if (line.match(/^\s*$/))
+            return;
+
+          maxLineNumber++;
+        });
+      });
+    });
+
+    readStream.on('error', function (e) {
+
+    });
+  } // args.gcode
+  else {
+    startSendFile();
+  }
 }
 
 function openTinyG() {
@@ -128,7 +264,7 @@ function openTinyG() {
 
     function completeOpen() {
       if (process.stdout.isTTY) {
-        var rl = readline.createInterface(process.stdin, process.stdout);
+        rl = readline.createInterface(process.stdin, process.stdout);
         rl.setPrompt(chalk.dim('TinyG# '), 'TinyG# '.length);
         rl.prompt();
 
@@ -148,34 +284,24 @@ function openTinyG() {
           if (k && k.ctrl) {
             if (k.name == 'd') {
               // TODO: verify that we are sending a file
-              logStream.write(util.format(">>^d\n"));
+              log(util.format(">>^d\n"));
               g.write('\x04'); // send the ^d
               return;
             }
             else if (k.name == 'c') {
-              // TODO: verify that we are sending a file
-              // logStream.write(util.format(">>!\n"));
-              if (STAT_CODES[latestMotionStatus] == "Hold") {
-                // g.write('\x04'); // send the ^d
-
-                var e = util.format("## Recieved CTRL-C in State '%s' -- sending CTRL-D and exiting.\n", STAT_CODES[latestMotionStatus]);
-                logStream.write(e);
-                if (interactive) {
-                  process.stdout.write(chalk.dim(e));
-                }
-
-                g.close();
-                rl.close();
-                return;
-              } else if (STAT_CODES[latestMotionStatus].match(/^(Run|Probing$|Homing$)/)) {
-                g.write('!');
-                return;
+              var e = util.format("## Recieved CTRL-C in State '%s' -- sending CTRL-D and exiting.\n", STAT_CODES[latestMotionStatus]);
+              log(e);
+              if (interactive) {
+                process.stdout.write(chalk.dim(e));
               }
+
+              tryToQuit()
+              return;
             }
 
           // Single character commands get sent immediately
         } else if (ch && ch.match(/^[!~%]/)) {
-            logStream.write(util.format(">>%s\n", ch));
+            log(util.format(">>%s\n", ch));
             g.write(ch);
             return;
           }
@@ -186,16 +312,15 @@ function openTinyG() {
         })
 
         rl.on('line', function(line) {
-          logStream.write(util.format(">%s\n", line));
-          g.write(line);
-          if (interactive) {
-            process.stdout.write(chalk.dim(">"+ line)+"\n");
+          parseCommand(line);
+          if (rl !== null) {
+            rl.prompt(true);
           }
-          rl.prompt(true);
         });
 
         rl.on('close', function() {
           g.close();
+          rl = null;
         });
 
         var leftText = "Progress |";
@@ -283,61 +408,7 @@ function openTinyG() {
       }
 
       if (args.gcode || !process.stdin.isTTY) {
-        interactive = false;
-
-        function startSendFile() {
-          sendingFile = true;
-          g.sendFile(args.gcode || process.stdin, function(err) {
-            if (err) {
-              logStream.write(util.format("Error returned: %s\n", err));
-            }
-            logStream.write(util.format("### Done sending\n"));
-            process.stdout.write("\n")
-            rl.close();
-            sendingFile = false;
-            g.close();
-          });
-        }
-
-        if (args.gcode) {
-          var readStream = fs.createReadStream(args.gcode);
-          readStream.once('open', function () {
-            maxLineNumber = 0;
-
-            var readBuffer = '';
-
-            readStream.setEncoding('utf8');
-
-            readStream.once('end', function () {
-              readStream.close();
-            });
-
-            readStream.once('close', function () {
-              startSendFile();
-            });
-
-            readStream.on('data', function (data) {
-              readBuffer += data.toString();
-
-              // Split collected data by line endings
-              var lines = readBuffer.split(/(\r\n|\r|\n)+/);
-
-              // If there is leftover data,
-              readBuffer = lines.pop();
-
-              lines.forEach(function (line) {
-                if (line.match(/^\s*$/))
-                  return;
-
-                maxLineNumber++;
-              });
-            });
-          });
-        } // args.gcode
-        else {
-          startSendFile();
-        }
-
+        sendFile(args.gcode || process.stdin);
       }
     }
 
@@ -354,20 +425,20 @@ function openTinyG() {
     }
 
     g.on('data', function(data) {
-      logStream.write(util.format('<%s\n', data));
+      log(util.format('<%s\n', data));
     });
 
     g.on('sentGcode', function(data) {
-      logStream.write(util.format('>%s\n', data.gcode));
+      log(util.format('>%s\n', data.gcode));
     });
 
     g.on('close', function() {
       // clearInterval(srBlaster);
-      logStream.write(util.format("### Port Closed!!\n"));
+      log(util.format("### Port Closed!!\n"));
 
       if (args.log) {
         // TODO: Use startTime to determine length of job run
-        logStream.write('## Closing log: ' + (new Date()).toLocaleString() + "\n\n");
+        log('## Closing log: ' + (new Date()).toLocaleString() + "\n\n");
         // logStream.close();
       }
 
