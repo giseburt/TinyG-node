@@ -157,7 +157,7 @@ function openTinyG() {
               // TODO: verify that we are sending a file
               // logStream.write(util.format(">>!\n"));
               if (STAT_CODES[latestMotionStatus] == "Hold") {
-                g.write('\x04'); // send the ^d
+                // g.write('\x04'); // send the ^d
 
                 var e = util.format("## Recieved CTRL-C in State '%s' -- sending CTRL-D and exiting.\n", STAT_CODES[latestMotionStatus]);
                 logStream.write(e);

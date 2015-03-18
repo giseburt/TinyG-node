@@ -394,8 +394,6 @@ TinyG.prototype.write = function(value) {
 
   // Specials bypass the buffer!
   if (typeof value !== "string" || value.match(/^[{}!~]$/)) {
-    self.emit('error', util.format("###WRITEjs: '%s'", JSON.stringify(value)))
-
     self._write(value);
     return;
   }
@@ -498,8 +496,8 @@ TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
 }; // writeWithPromise
 
 // Utility functions for sendinf files
-TinyG.prototype.setDoneReading = function(v) { console.log("DONE READING"); this.doneReading = v; }
-TinyG.prototype.setDoneSending = function(v) { console.log("DONE SENDING"); this.doneSending = v; }
+TinyG.prototype.setDoneReading = function(v) { this.doneReading = v; }
+TinyG.prototype.setDoneSending = function(v) { this.doneSending = v; }
 
 TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
   var self = this;
@@ -520,7 +518,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
     throw err;
   });
 
-  var needLines = 0; // We initially need lines
+  var needLines = 1; // We initially need lines
   var readBuffer = "";
   var inReadLines = false; // prevent infinite looping
   var nextlineNumber = 1;
