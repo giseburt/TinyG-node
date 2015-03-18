@@ -74,6 +74,8 @@ var startTime = new Date();
 
 // Interactive means that we're not just showing a progress bar but are presenting a full console.
 var interactive = process.stdout.isTTY && process.stdin.isTTY;
+var sendingFile = false;
+var latestMotionStatus = 0;
 
 if (args.log) {
   logStream = fs.createWriteStream(args.log, 'r+');
@@ -123,6 +125,8 @@ function openTinyG() {
   g.on('open', function() {
     // console.log('#### open');
 
+    var maxLineNumber = 0;
+
     function completeOpen() {
       if (process.stdout.isTTY) {
         var rl = readline.createInterface(process.stdin, process.stdout);
@@ -148,12 +152,26 @@ function openTinyG() {
               logStream.write(util.format(">>^d\n"));
               g.write('\x04'); // send the ^d
               return;
-            } else
-            if (k.name == 'c') {
+            }
+            else if (k.name == 'c') {
               // TODO: verify that we are sending a file
-              logStream.write(util.format(">>!\n"));
-              g.write('!');
-              return;
+              // logStream.write(util.format(">>!\n"));
+              if (STAT_CODES[latestMotionStatus] == "Hold") {
+                g.write('\x04'); // send the ^d
+
+                var e = util.format("## Recieved CTRL-C in State '%s' -- sending CTRL-D and exiting.\n", STAT_CODES[latestMotionStatus]);
+                logStream.write(e);
+                if (interactive) {
+                  process.stdout.write(chalk.dim(e));
+                }
+
+                g.close();
+                rl.close();
+                return;
+              } else if (STAT_CODES[latestMotionStatus].match(/^(Run|Probing$|Homing$)/)) {
+                g.write('!');
+                return;
+              }
             }
 
           // Single character commands get sent immediately
@@ -184,8 +202,6 @@ function openTinyG() {
         var leftText = "Progress |";
         var rightText = "|   0% ";
 
-        var maxLineNumber = 0;
-
         // If we call sendfile, this will update us on the send progress:
         // g.on('sendBufferChanged', function(b) {
         //   maxLineNumber = b.lines;
@@ -196,6 +212,10 @@ function openTinyG() {
         g.on('statusChanged', function(st) {
           for(var prop in st) {
             status[prop] = st[prop];
+          }
+
+          if (status.stat) {
+            latestMotionStatus = status.stat;
           }
 
           if (interactive) {
@@ -212,17 +232,19 @@ function openTinyG() {
                 STAT_CODES[status.stat] || 'Stopped'
               )
             );
+
             process.stdout.write(
               util.inspect(status) + "\n"
             );
 
             rl.prompt(true);
           }
+        }); // g.on('statusChanged', ... )
 
-
-          if (st.line) {
-            if (st.line > maxLineNumber) {
-              maxLineNumber = st.line;
+        g.on('response', function(r) {
+          if (r.n) {
+            if (r.n > maxLineNumber) {
+              maxLineNumber = r.n;
             }
             // clear the whole line.
             // readline.moveCursor(process.stdout, 0, -1);
@@ -231,7 +253,7 @@ function openTinyG() {
 
             var maxWidth = process.stdout.columns;
             var paddingWidth = leftText.length + rightText.length;
-            var barWidth = (maxWidth - paddingWidth) * (st.line/maxLineNumber);
+            var barWidth = (maxWidth - paddingWidth) * (r.n/maxLineNumber);
             var barLeft = (maxWidth - paddingWidth);
 
             process.stdout.write(leftText);
@@ -253,7 +275,7 @@ function openTinyG() {
             }
 
             process.stdout.write("| ")
-            var percent = ((st.line/maxLineNumber) * 100);
+            var percent = ((r.n/maxLineNumber) * 100);
             process.stdout.write(sprintf("%3.0f%%", percent));
 
             // if (process.stderr.isTTY) {
@@ -261,15 +283,16 @@ function openTinyG() {
             // } else {
               process.stdout.write("\r")
             // }
-          }
+          } // if st.line
           // rl.prompt(true);
-        }); // if st.line
+        }); // g.on('statusChanged', ... )
       }
 
       if (args.gcode || !process.stdin.isTTY) {
         interactive = false;
 
         function startSendFile() {
+          sendingFile = true;
           g.sendFile(args.gcode || process.stdin, function(err) {
             if (err) {
               logStream.write(util.format("Error returned: %s\n", err));
@@ -277,6 +300,7 @@ function openTinyG() {
             logStream.write(util.format("### Done sending\n"));
             process.stdout.write("\n")
             rl.close();
+            sendingFile = false;
             g.close();
           });
         }
@@ -284,6 +308,8 @@ function openTinyG() {
         if (args.gcode) {
           var readStream = fs.createReadStream(args.gcode);
           readStream.once('open', function () {
+            maxLineNumber = 0;
+
             var readBuffer = '';
 
             readStream.setEncoding('utf8');
@@ -308,8 +334,9 @@ function openTinyG() {
               lines.forEach(function (line) {
                 if (line.match(/^\s*$/))
                   return;
-                
+
                 maxLineNumber++;
+              });
             });
           });
         } // args.gcode

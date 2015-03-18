@@ -23,6 +23,18 @@ function TinyG() {
   var inHold = false;
   self.inHold = inHold;
 
+  var linesInBuffer = 0;
+  self.linesInBuffer = linesInBuffer;
+
+  var doneReading = false;
+  self.doneReading = doneReading;
+
+  var doneSending = false;
+  self.doneSending = doneSending;
+
+  var lineBuffer = []; // start it out ensuring that the machine is reset
+  self.lineBuffer = lineBuffer;
+
   var readBuffer = "";
   var _tinygParser = function (emitter, buffer) {
     // Collect data
@@ -181,7 +193,7 @@ TinyG.prototype.open = function (path, options) {
     //     self.write({ee:0}); //Set echo off, it'll confuse the parser
     //     self.write({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
     //     // self.write({jv:4}); //Set JSON verbosity to 5 (max)
-      var promise = self.set({jv:5}); //Set JSON verbosity to 2 (medium)
+      var promise = self.set({jv:4}); //Set JSON verbosity to 2 (medium)
     //     // self.write({qv:2}); //Set queue report verbosity
     //     self.write({qv:0}); //Set queue report verbosity (off)
     //     self.write(
@@ -235,7 +247,119 @@ TinyG.prototype.open = function (path, options) {
 
     self.emit("close", err);
   });
-};
+
+  self.once('open', function () {
+    if (self.dataPortPath) {
+      self.serialPortData = new SerialPort(self.dataPortPath, self._baseOptions);
+
+      self.serialPortData.on("open", function () {
+        self.serialPortData.on('data', function(data) {
+          // This should NEVER happen!!
+          // The data channel should never get data back.
+          self.emit("data", data);
+        });
+
+        self.emit("dataChannelReady");
+      });
+
+      self.serialPortData.on("error", function(err) {
+        self.emit("error", {serialPortDataError:err});
+      });
+
+      self.serialPortData.on("close", function(err) {
+        self.serialPortData = null;
+      });
+    } else {
+      process.nextTick(function() {
+        self.serialPortData = null;
+        self.emit("dataChannelReady");
+      });
+    }
+  });
+
+  self.on('dataChannelReady', function () {
+    self.write({rx:null});
+
+    var lineCountToSend = 0;
+    var lineInLastSR = 0;
+
+    var lineBuffer = self.lineBuffer;
+
+    function _sendLines() {
+      var lastLineSent = 0;
+
+      while (lineBuffer.length > 0 && lineCountToSend > 0) {
+        var line = lineBuffer.shift();
+        self._write(line);
+        lastLineSent = self.parseGcode(line, {});
+        lineCountToSend--;
+      }
+
+      if (self.doneReading) {
+        if (lineBuffer.length === 0) {
+          self.setDoneSending(true);
+        }
+      } else if (lineBuffer.length < lineCountToSend) {
+        self.emit('needLines', lineCountToSend - lineBuffer.length);
+      }
+
+      self.emit('sendBufferChanged', {'sent': lastLineSent});
+    }
+
+    self.on('response', function(r) {
+      if (r.hasOwnProperty("rx")) {
+        lineCountToSend = r.rx - 1;
+        // -1 is okay, that just means wait until we've sent two lines to send again
+      } else {
+        lineCountToSend++;
+      }
+
+      if (lineCountToSend > 0){
+        _sendLines();
+      }
+    }); // self.on('response', ... )
+
+    self.on('_linesAvailable', function () {
+      _sendLines();
+    })
+
+    self.on('statusChanged', function(sr) {
+      if (sr.line) {
+        lineInLastSR = sr.line;
+      }
+
+      // See https://github.com/synthetos/TinyG/wiki/TinyG-Status-Codes#status-report-enumerations
+      //   for more into about stat codes.
+
+      // 3	program stop or no more blocks (M0, M1, M60)
+      // 4	program end via M2, M30
+      if (sr.stat == 3 || sr.stat == 4) {
+        if (self.doneSending) {
+          self.emit('doneSending');
+        }
+
+      // 2	machine is in alarm state (shut down)
+      } else if (sr.stat == 2) {
+        // Fatal error! Shut down!
+        self.emit('doneSending', sr);
+
+      // 6 is holding
+      } else if (sr.stat == 6) {
+        // pause sending
+        lineCountToSend = 0;
+        self.inHold = true;
+
+      // 5 is running -- check to make sure we weren't in hold
+      } else if (sr.stat == 5 && self.inHold == true) {
+        self.inHold = false;
+
+        // request a new rx object to determine how many lines to send
+        self.write({rx:null});
+      }
+    });  // self.on('statusChanged', ... )
+
+  });
+}; // open
 
 TinyG.prototype.close = function() {
   var self = this;
@@ -260,11 +384,31 @@ TinyG.prototype.close = function() {
 TinyG.prototype.defaultWriteCallback = function (err, results) {
   var self = this;
 
-  if (err)
+  if (err) {
     self.emit('error', util.format("WRITE ERROR: ", err));
+  }
 }
 
-TinyG.prototype.write = function(value, callback) {
+TinyG.prototype.write = function(value) {
+  var self = this;
+
+  // Specials bypass the buffer!
+  if (typeof value !== "string" || value.match(/^[{}!~]$/)) {
+    self.emit('error', util.format("###WRITEjs: '%s'", JSON.stringify(value)))
+
+    self._write(value);
+    return;
+  }
+
+  if (value.match(/[\n\r]$/) === null) {
+    value = value + "\n";
+  }
+
+  self.lineBuffer.push(value);
+  self.emit('_linesAvailable');
+}
+
+TinyG.prototype._write = function(value, callback) {
   var self = this;
 
   if (callback === undefined)
@@ -292,7 +436,7 @@ TinyG.prototype.write = function(value, callback) {
       self.serialPortData.write(value, callback);
     }
   }
-};
+}; // _write
 
 TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
   var self = this;
@@ -351,193 +495,106 @@ TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
   })
   // .progress(console.log) // uncomment to debug responses
   ;
-};
+}; // writeWithPromise
 
+// Utility functions for sendinf files
+TinyG.prototype.setDoneReading = function(v) { console.log("DONE READING"); this.doneReading = v; }
+TinyG.prototype.setDoneSending = function(v) { console.log("DONE SENDING"); this.doneSending = v; }
 
 TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
   var self = this;
 
-  var readBuffer = "";
-  // var fileSize = fs.statSync(filename).size;
-
-  var dataChannel = self.serialPortControl;
-
-  if (self.dataPortPath) {
-    self.serialPortData = new SerialPort(self.dataPortPath, self._baseOptions);
-
-    self.serialPortData.on("open", function () {
-      self.serialPortData.on('data', function(data) {
-        // This should NEVER happen!!
-        // The data channel should never get data back.
-        self.emit("data", data);
-      });
-
-      dataChannel = self.serialPortData;
-
-      self.emit("dataChannelReady");
-    });
-
-    self.serialPortData.on("error", function(err) {
-      self.emit("error", {serialPortDataError:err});
-    });
-
-    self.serialPortData.on("close", function(err) {
-      self.serialPortData = null;
-    });
+  var readStream;
+  if (typeof filename_or_stdin == 'string') {
+    // console.warn("Opening file '%s' for streaming.", filename_or_stdin)
+    readStream = fs.createReadStream(filename_or_stdin);
   } else {
-    process.nextTick(function() {
-      self.emit("dataChannelReady");
-    });
+    readStream = filename_or_stdin;
+    readStream.resume();
   }
 
-  self.on('dataChannelReady', function () {
-    var readStream;
-    if (typeof filename_or_stdin == 'string') {
-      // console.warn("Opening file '%s' for streaming.", filename_or_stdin)
-      readStream = fs.createReadStream(filename_or_stdin);
-    } else {
-      readStream = filename_or_stdin;
-      readStream.resume();
-    }
+  readStream.setEncoding('utf8');
 
-    readStream.setEncoding('utf8');
+  readStream.on('error', function(err) {
+    console.log(err);
+    throw err;
+  });
 
-    readStream.on('error', function(err) {
-      console.log(err);
-      throw err;
-    });
+  var needLines = 0; // We initially need lines
+  var readBuffer = "";
+  var inReadLines = false; // prevent infinite looping
+  var nextlineNumber = 1;
 
-    self.write({rx:null});
+  var fileEnded = false;
 
-    var lineCountToSend = 0;
-    var lineBuffer = []; // start it out ensuring that the machine is reset
-    var nextlineNumber = 1;
-    var lineInLastSR = 0;
-    var doneReading = false;
-    var doneSending = false;
+  function _doNeedLines(n) {
+    needLines = n;
+    _readLines();
+  };
 
-    function sendLines() {
-      var data;
-      data = readStream.read(4 * 1024); // read in 4K chunks
-      if (data && data.length > 0) {
-        readBuffer += data.toString();
+  function _readLines() {
+    // console.warn("_readLines");
+    if (inReadLines || !needLines) return;
 
-        // Split collected data by line endings
-        var lines = readBuffer.split(/(\r\n|\r|\n)+/);
+    inReadLines = true;
+    var data;
+    data = readStream.read(4 * 1024); // read in 4K chunks
+    if (data && data.length > 0) {
+      readBuffer += data.toString();
 
-        // If there is leftover data,
-        readBuffer = lines.pop();
+      // Split collected data by line endings
+      var lines = readBuffer.split(/(\r\n|\r|\n)+/);
 
-        readFileState = {};
+      // If there is leftover data,
+      readBuffer = lines.pop();
 
-        lines.forEach(function (line) {
-          // Cleanup and remove blank or all-whitespace lines.
-          // TODO:
-          // * Handle relative QRs (when available)
-          // * Ability to stop or pause
-          // * Rewrite and map line numbers
+      lines.forEach(function (line) {
+        // Cleanup and remove blank or all-whitespace lines.
 
-          if (line.match(/^\s*$/))
-            return;
+        if (line.match(/^\s*$/))
+          return; // from the forEach
 
-          if (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) {
-            line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
-            // self.emit('error', util.format(line));
-            nextlineNumber++;
-          }
+        if (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) {
+          line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
+          // self.emit('error', util.format(line));
+          nextlineNumber++;
+        }
 
-          lineBuffer.push(line);
-        });
-      }
-
-      var lastLineSent = 0;
-
-      while (lineBuffer.length > 0 && lineCountToSend > 0) {
-        var line = lineBuffer.shift();
         self.write(line);
-        lastLineSent = self.parseGcode(line, readFileState);
-        lineCountToSend--;
-      }
-
-      if (doneReading && lineCountToSend <= 0) {
-        doneSending = true;
-      }
-
-      // console.log("-lineCountToSend: ", lineCountToSend);
-
-      self.emit('sendBufferChanged', {'lines': nextlineNumber, 'sent': lastLineSent});
+        needLines--;
+      });
     }
 
-    readStream.on('readable', function() {
-      sendLines();
-    }); // readStream.on('readable', ... )
+    if (fileEnded) {
+      self.setDoneReading(true);
+    }
 
-    readStream.on('end', function() {
-      readStream.close();
-      doneReading = true;
-    });
+    inReadLines = false;
+  }; // _readLines
 
-    self.on('response', function(r) {
-      if (r.hasOwnProperty("rx")) {
-        lineCountToSend = r.rx - 1;
-        // -1 is okay, that just means wait until we've sent two lines to send again
-      } else {
-        lineCountToSend++;
-      }
+  readStream.on('readable', function() {
+    // console.warn("readable");
+    _readLines();
+  }); // readStream.on('readable', ... )
 
-      // console.log("response: %s lineCountToSend: ", util.inspect(r), lineCountToSend);
+  readStream.on('end', function() {
+    readStream.close();
+    fileEnded = true;
+  });
 
-      sendLines();
-    }); // self.on('response', ... )
+  self.on('needLines', _doNeedLines); // self.on('needLines', ... )
 
+  self.once('doneSending', function (err) {
+    if (callback) {
+      callback(err);
+    }
+    else {
+      self.close();
 
-    self.on('statusChanged', function(sr) {
-      // console.log("SR: ", sr);
-
-      if (sr.line) {
-        lineInLastSR = sr.line;
-      }
-
-      // See https://github.com/synthetos/TinyG/wiki/TinyG-Status-Codes#status-report-enumerations
-      //   for more into about stat codes.
-
-      // 3	program stop or no more blocks (M0, M1, M60)
-      // 4	program end via M2, M30
-      if (sr.stat == 3 || sr.stat == 4) {
-        if (doneSending && lineInLastSR == nextlineNumber-1) {
-          if (callback) {
-            // console.warn("DONE!!");
-            callback();
-          }
-        }
-
-      // 2	machine is in alarm state (shut down)
-      } else if (sr.stat == 2) {
-        // Fatal error! Shut down!
-        if (callback) {
-          // console.warn("DONE!!");
-          callback(sr);
-        } else {
-          self.close();
-          callback("Fatal error!");
-        }
-
-      // 6 is holding
-      } else if (sr.stat == 6) {
-        // pause sending
-        lineCountToSend = 0;
-        self.inHold = true;
-
-      // 5 is running -- check to make sure we weren't in hold
-    } else if (sr.stat == 5 && self.inHold == true) {
-        self.inHold = false;
-
-        // request a new rx object to determine how many lines to send
-        self.write({rx:null});
-      }
-    })
-
-  }); // self.on('statusChanged', ... )
+      if (err)
+        callback("Fatal error!");
+    }
+  });
 };
 
 TinyG.prototype.get = function(key) {
