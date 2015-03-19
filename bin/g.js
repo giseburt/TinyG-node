@@ -186,6 +186,7 @@ function tryToQuit() {
   }
 }
 
+var maxLineNumber = 0;
 function sendFile(fileName) {
   interactive = false;
 
@@ -259,8 +260,6 @@ function openTinyG() {
 
   g.on('open', function() {
     // console.log('#### open');
-
-    var maxLineNumber = 0;
 
     function completeOpen() {
       if (process.stdout.isTTY) {
