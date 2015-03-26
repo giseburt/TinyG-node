@@ -10,9 +10,6 @@ First install the tinyg npm globally, so it'll be in your path:
 ```bash
   # If you run as root you can remove sudo
   sudo npm install -g tinyg
-
-  ## Since upsteam node-serialport hasn't yet released with a few important fixes, you need:
-  sudo npm install -g tinyg --build-from-source
 ```
 
 Now you can just execute the `g` command to get a full "terminal" experience to TinyG. If there is only one TinyG attached, then you don't need to provide any more parameters:
@@ -37,6 +34,14 @@ To send a file with the `g` utility, simply pass the filename of a gcode file, a
 ```
 
 If you wish to keep a log of the interaction between the TinyG and the `g` utility, then add the `-g LOGFILE` parameter to have it save the log in `LOGFILE`.
+
+```
+  my_host$ g my_awesome_project.gcode -g logfile.log
+  Found command port: '/dev/cu.usbmodem14521' with data port '/dev/cu.usbmodem14523'.
+  TinyG# Opening file 'my_awesome_project.gcode' for streaming.
+  Progress |=========================================================______|  91%
+```
+
 
 _Note: The `g` command line utility is still a little rough around the edges. It's still in active development, so update often!_
 

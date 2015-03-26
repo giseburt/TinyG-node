@@ -1,7 +1,7 @@
 var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 var fs = require('fs');
-var Q = require('Q');
+var Q = require('q');
 var RJSON = require("relaxed-json");
 var SerialPortModule = require("serialport"),
     SerialPort = SerialPortModule.SerialPort;
@@ -207,9 +207,9 @@ TinyG.prototype._open_second_channel = function (doSetup) {
     self.serialPortData.on('error', _onDataError);
 
     self.serialPortData.once("close", function(err) {
-      self.serialPortData = null;
       self.serialPortData.removeListener('data', _dataOnData);
       self.serialPortData.removeListener('error', _onDataError);
+      self.serialPortData = null;
     });
   } else {
     process.nextTick(function() {
@@ -264,9 +264,11 @@ TinyG.prototype._complete_open = function (doSetup) {
       promise = promise.then(function () {
         return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
       });
-      promise = promise.then(function () {
-        return self.set({rxm:1}); // Set "packet mode"
-      });
+      if (self.serialPortData === null) { // we're single channel
+        promise = promise.then(function () {
+          return self.set({rxm:1}); // Set "packet mode"
+        });
+      }
       promise = promise.then(function () {
         self.emit('open');
       });
@@ -275,10 +277,14 @@ TinyG.prototype._complete_open = function (doSetup) {
     self.emit('open');
   }
 
-  self.write({rx:null});
+  if (self.serialPortData === null) {
+    self.write({rx:null});
+  } else {
+    self.lineCountToSend = 200;
+  }
 
   var _onResponse = function(r) {
-    if (r.hasOwnProperty("rx")) {
+    if (r.hasOwnProperty("rx") && self.serialPortData === null) {
       self.ignoredResponses--;
       self.lineCountToSend = r.rx - 1;
       // -1 is okay, that just means wait until we've sent two lines to send again
@@ -320,7 +326,7 @@ TinyG.prototype._complete_open = function (doSetup) {
     // 6 is holding
     } else if (sr.stat == 6) {
       // pause sending
-      self.lineCountToSend = 0;
+      // self.lineCountToSend = 0;
       self.inHold = true;
 
     // 5 is running -- check to make sure we weren't in hold

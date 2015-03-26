@@ -8,7 +8,7 @@ var fs = require('fs');
 var readline = require('readline');
 var chalk = require('chalk');
 var sprintf = require('sprintf').sprintf;
-var Q = require('Q');
+var Q = require('q');
 var FS = require('fs');
 var readFile = Q.nfbind(FS.readFile);
 
@@ -170,7 +170,11 @@ function parseCommand(line) {
 function tryToQuit() {
   // TODO: verify that we are sending a file
 
-  if (STAT_CODES[latestMotionStatus].match(/^(Hold|Init|Stop|End)$/)) {
+  if (STAT_CODES[latestMotionStatus].match(/^(Run|Probing$|Homing$)/)) {
+    g.write('!');
+    return;
+  } else {
+    // if (STAT_CODES[latestMotionStatus].match(/^(Hold|Init|Stop|End|Ready)$/))
     // g.write('\x04'); // send the ^d
     if (rl !== null) {
       rl.close();
@@ -179,9 +183,6 @@ function tryToQuit() {
 
     g.close();
 
-    return;
-  } else if (STAT_CODES[latestMotionStatus].match(/^(Run|Probing$|Homing$)/)) {
-    g.write('!');
     return;
   }
 }
@@ -201,7 +202,15 @@ function sendFile(fileName) {
       process.stdout.write("\n")
 
       sendingFile = false;
+
+      // FIX THIS!!
+      if (rl !== null) {
+        rl.close();
+        // rl = null;
+      }
+
       g.close();
+
     });
   }
 
