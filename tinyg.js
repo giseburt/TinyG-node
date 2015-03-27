@@ -295,7 +295,7 @@ TinyG.prototype._complete_open = function (doSetup) {
       self.lineCountToSend++;
     }
 
-    console.log("self.lineCountToSend: " + self.lineCountToSend)
+    // console.log("self.lineCountToSend: " + self.lineCountToSend)
 
     if (self.lineCountToSend > 0){
       self._sendLines();
@@ -360,11 +360,11 @@ TinyG.prototype._sendLines = function() {
     self._write(line);
     lastLineSent = self.parseGcode(line, {});
     self.lineCountToSend--;
-    console.log("self.lineBuffer.length: " + self.lineBuffer.length)
+    // console.log("self.lineBuffer.length: " + self.lineBuffer.length)
   }
 
   if (self.doneReading) {
-    console.log("self.doneReading: " + self.doneReading)
+    // console.log("self.doneReading: " + self.doneReading)
     if (self.lineBuffer.length === 0) {
       self.emit('doneSending');
     }
@@ -646,7 +646,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
     //   for more into about stat codes.
 
     if (sr.stat) {
-      console.log("sr.stat: " + self.lineCountToSend)
+      // console.log("sr.stat: " + self.lineCountToSend)
 
       // 3	program stop or no more blocks (M0, M1, M60)
       // 4	program end via M2, M30
