@@ -366,12 +366,11 @@ function openTinyG() {
 
             rl.prompt(true);
           }
-        }); // g.on('statusChanged', ... )
 
-        g.on('response', function(r) {
-          if (r.n) {
-            if (r.n > maxLineNumber) {
-              maxLineNumber = r.n;
+
+          if (st.line) {
+            if (st.line > maxLineNumber) {
+              maxLineNumber = st.line;
             }
             // clear the whole line.
             // readline.moveCursor(process.stdout, 0, -1);
@@ -380,7 +379,7 @@ function openTinyG() {
 
             var maxWidth = process.stdout.columns;
             var paddingWidth = leftText.length + rightText.length;
-            var barWidth = (maxWidth - paddingWidth) * (r.n/maxLineNumber);
+            var barWidth = (maxWidth - paddingWidth) * (st.line/maxLineNumber);
             var barLeft = (maxWidth - paddingWidth);
 
             process.stdout.write(leftText);
@@ -402,7 +401,7 @@ function openTinyG() {
             }
 
             process.stdout.write("| ")
-            var percent = ((r.n/maxLineNumber) * 100);
+            var percent = ((st.line/maxLineNumber) * 100);
             process.stdout.write(sprintf("%3.0f%%", percent));
 
             // if (process.stderr.isTTY) {

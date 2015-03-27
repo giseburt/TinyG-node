@@ -295,7 +295,7 @@ TinyG.prototype._complete_open = function (doSetup) {
       self.lineCountToSend++;
     }
 
-    // console.log("self.lineCountToSend: " + self.lineCountToSend)
+    console.log("self.lineCountToSend: " + self.lineCountToSend)
 
     if (self.lineCountToSend > 0){
       self._sendLines();
@@ -360,9 +360,11 @@ TinyG.prototype._sendLines = function() {
     self._write(line);
     lastLineSent = self.parseGcode(line, {});
     self.lineCountToSend--;
+    console.log("self.lineBuffer.length: " + self.lineBuffer.length)
   }
 
   if (self.doneReading) {
+    console.log("self.doneReading: " + self.doneReading)
     if (self.lineBuffer.length === 0) {
       self.emit('doneSending');
     }
@@ -629,7 +631,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
 
   var _doDoneSending = function () {
     if (stopOrEndStat) {
-      _finish();
+      // _finish();
     } else {
       doneSending = true;
     }
@@ -643,36 +645,40 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
     // See https://github.com/synthetos/TinyG/wiki/TinyG-Status-Codes#status-report-enumerations
     //   for more into about stat codes.
 
-    // 3	program stop or no more blocks (M0, M1, M60)
-    // 4	program end via M2, M30
-    if (sr.stat == 3 || sr.stat == 4) {
-      if (sr.stat == 4) {
-        if (!doneSending) {
-        readStream.close();
-        fileEnded = true;
+    if (sr.stat) {
+      console.log("sr.stat: " + self.lineCountToSend)
+
+      // 3	program stop or no more blocks (M0, M1, M60)
+      // 4	program end via M2, M30
+      if (sr.stat == 3 || sr.stat == 4) {
+        if (sr.stat == 4) {
+          if (!doneSending) {
+            readStream.close();
+            fileEnded = true;
+          }
+          doneSending = true;
         }
-        doneSending = true;
+
+        if (doneSending) {
+          // _finish();
+        } else {
+          stopOrEndStat = true;
+        }
+
+      // 2	machine is in alarm state (shut down)
+      } else if (sr.stat == 2) {
+        // If the machine is in error, we're done no matter what
+        _finish(sr);
+
+      // 6 is holding
+      } else if (sr.stat == 6) {
+        stopOrEndStat = false;
+
+      // 5 is running -- check to make sure we weren't in hold
+      } else if (sr.stat == 5 && self.inHold == true) {
+        stopOrEndStat = false;
       }
-
-      if (doneSending) {
-        _finish();
-      } else {
-        stopOrEndStat = true;
-      }
-
-    // 2	machine is in alarm state (shut down)
-    } else if (sr.stat == 2) {
-      // If the machine is in error, we're done no matter what
-      _finish(sr);
-
-    // 6 is holding
-    } else if (sr.stat == 6) {
-      // nothing to do here
-
-    // 5 is running -- check to make sure we weren't in hold
-    } else if (sr.stat == 5 && self.inHold == true) {
-      // nothing to do here
-    }
+    } // if (sr.stat)
   }; // _doStatusChanged
 
   var _finish = function (err) {
