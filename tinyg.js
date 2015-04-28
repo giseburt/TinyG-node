@@ -31,6 +31,7 @@ function TinyG() {
   this.serialPortData = null;
   self.inHold = false;
   self.linesInBuffer = 0;
+  self.timedSendsOnly = false;
   self.doneReading = false;
   self.lineBuffer = []; // start it out ensuring that the machine is reset;
   self.lineCountToSend = 0;
@@ -75,14 +76,14 @@ function TinyG() {
           if (footer !== undefined) {
             if (footer[1] == 108) {
               self.emit('error', new TinyGError(
-                util.format("ERROR: TinyG reported an syntax error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
+                util.format("ERROR: TinyG reported an syntax error reading '%s': %d (based on %d bytes read)", JSON.stringify(jsObject.r), footer[1], footer[2]),
                 jsObject
               ));
             }
 
             else if (footer[1] == 20) {
               self.emit('error', new TinyGError(
-                util.format("ERROR: TinyG reported an internal error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
+                util.format("ERROR: TinyG reported an internal error reading '%s': %d (based on %d bytes read)", JSON.stringify(jsObject.r), footer[1], footer[2]),
                 jsObject
               ));
             }
@@ -96,7 +97,7 @@ function TinyG() {
 
             else if (footer[1] != 0) {
               self.emit('error', new TinyGError(
-                util.format("ERROR: TinyG reported an error reading '%s': %d (based on %d bytes read and a checksum of %d)", JSON.stringify(jsObject.r), footer[1], footer[2], footer[3]),
+                util.format("ERROR: TinyG reported an error reading '%s': %d (based on %d bytes read)", JSON.stringify(jsObject.r), footer[1], footer[2]),
                 jsObject
               ));
             }
@@ -113,7 +114,10 @@ function TinyG() {
           jsObject = jsObject.r;
         }
 
-        if (jsObject.hasOwnProperty('sr')) {
+        if (jsObject.hasOwnProperty('er')) {
+          self.emit("errorReport", jsObject.er);
+        }
+        else if (jsObject.hasOwnProperty('sr')) {
           self.emit("statusChanged", jsObject.sr);
         }
         else if (jsObject.hasOwnProperty('gc')) {
@@ -136,7 +140,8 @@ function TinyG() {
     baudRate: 115200,
     flowcontrol: ['RTSCTS'],
     // Provide our own custom parser:
-    parser: _tinygParser
+    parser: _tinygParser,
+    timedSendsOnly: false
   };
 }
 
@@ -155,9 +160,10 @@ TinyG.prototype.open = function (path, options) {
     options[key] = options[key] || self._baseOptions[key];
   }
 
-  // console.log(util.inspect(options));
+  console.log(util.inspect(options));
   self.dataPortPath = options.dataPortPath;
   self.serialPortControl = new SerialPort(path, options);
+  self.timedSendsOnly = options.timedSendsOnly;
 
   var _onControlData = function(data) {
     self.emit('data', data);
@@ -264,6 +270,9 @@ TinyG.prototype._complete_open = function (doSetup) {
       promise = promise.then(function () {
         return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
       });
+      promise = promise.then(function () {
+        return self.set({qv:2}); //Set queue report verbosity
+      });
       if (self.serialPortData === null) { // we're single channel
         promise = promise.then(function () {
           return self.set({rxm:1}); // Set "packet mode"
@@ -279,25 +288,29 @@ TinyG.prototype._complete_open = function (doSetup) {
 
   if (self.serialPortData === null) {
     self.write({rx:null});
-  } else {
-    self.lineCountToSend = 200;
+  } else if (!self.timedSendsOnly) {
+    self.lineCountToSend = 1000;
   }
 
   var _onResponse = function(r) {
     if (r.hasOwnProperty("rx") && self.serialPortData === null) {
       self.ignoredResponses--;
-      self.lineCountToSend = r.rx - 1;
+      if (!self.timedSendsOnly) {
+        self.lineCountToSend = r.rx - 1;
+      }
       // -1 is okay, that just means wait until we've sent two lines to send again
     } else if (self.ignoredResponses > 0) {
       self.ignoredResponses--;
       return;
     } else {
-      self.lineCountToSend++;
+        if (!self.timedSendsOnly) {
+          self.lineCountToSend++;
+        }
     }
 
     // console.log("self.lineCountToSend: " + self.lineCountToSend)
 
-    if (self.lineCountToSend > 0){
+    if ((!self.timedSendsOnly) && (self.lineCountToSend > 0)){
       self._sendLines();
     }
   }; // _onResponse
@@ -353,7 +366,7 @@ TinyG.prototype._sendLines = function() {
 
   var lastLineSent = 0;
 
-  // console.log(util.inspect({len: self.lineBuffer.length, lineCountToSend: self.lineCountToSend}))
+  console.log(util.inspect({len: self.lineBuffer.length, lineCountToSend: self.lineCountToSend}))
 
   while (self.lineBuffer.length > 0 && self.lineCountToSend > 0) {
     var line = self.lineBuffer.shift();
@@ -396,18 +409,74 @@ TinyG.prototype.close = function() {
   // 'close' event will set self.serialPortControl = null.
 };
 
+var previous_timecode = {
+  timecode: 0,
+  lines: 0,
+  fired: false // This is just in case a timeout fires before we've added all the lines
+  // Note: that there's still a race condition, but we're mitigating it.
+};
+
+var start_timecode = 0;
+var start_actual_time = 0;
+
 TinyG.prototype.write = function(value) {
   var self = this;
 
-  // Specials bypass the buffer!
-  if (typeof value !== "string" || value.match(/^[{}!~%\x03\x04]$/)) {
-    if (typeof value === "string" && value.match(/^%$/)) {
-      if (!self.inHold) {
-        // If we get a % by itself, and we're NOT in hold, it's a comment,
-        // toss it.
-        return;
+  if (self.timedSendsOnly && typeof value == "string") {
+    console.warn("Parsing:" + value);
+
+    if (timecodeMatch = value.match(/^(N[0-9]+\s*)\[\[([GC])([0-9]+)\]\](.*)/)) {
+      var line_num = timecodeMatch[1];
+      var channel = timecodeMatch[2]; // ignored
+      var timecode = timecodeMatch[3];
+      value = line_num + timecodeMatch[4];
+
+      console.warn("Resutls: " + value + "["+(timecode)+"]");
+
+      var new_timecode = {
+        channel: channel,
+        timecode: timecode,
+        fired: false,
+        lines: 1 + (previous_timecode.fired ? previous_timecode.lines : 0)
+      };
+
+      if (start_timecode == 0) {
+        start_timecode = timecode;
+        start_actual_time = Date.now();
       }
+
+      var delay_time = ((new_timecode.timecode - start_timecode)-(Date.now() - start_actual_time))*5;
+      previous_timecode = new_timecode;
+
+      setTimeout(function () {
+        console.warn("**Sending " + new_timecode.lines + " lines");
+        self.lineCountToSend += new_timecode.lines;
+        // console.warn("**self.lineCountToSend " + self.lineCountToSend + " lines");
+        new_timecode.lines = 0;
+        new_timecode.fired = true;
+        self._sendLines();
+      }, delay_time);
+
+      console.warn("Set to send 1 line in " + delay_time + "ms");
+    } else {
+      previous_timecode.lines++;
+      console.warn("Changed it to send " + previous_timecode.lines);
     }
+
+    // Normally, this would be a terrible idea..., but we're testing, so we do this:
+    // replace all the hex-escaped string values with the actual byte value:
+    value = value.replace(/\\x([0-9a-fA-F]+)/g, function(a,b) { return String.fromCharCode(parseInt(b,16)  ); })
+  }
+
+  // Specials bypass the buffer! Except when using timed sends...
+  else if ((typeof value !== "string" || value.match(/^[{}!~%\x03\x04]$/))) {
+    // if (typeof value === "string" && value.match(/^%$/)) {
+    //   if (!self.inHold) {
+    //     // If we get a % by itself, and we're NOT in hold, it's a comment,
+    //     // toss it.
+    //     return;
+    //   }
+    // }
     // We don't get a response for single-character codes, so don't ignore them...
     if (typeof value !== "string" || !value.match(/^[!~%\x03\x04]$/)) {
       self.ignoredResponses++;
@@ -419,6 +488,8 @@ TinyG.prototype.write = function(value) {
   if (value.match(/[\n\r]$/) === null) {
     value = value + "\n";
   }
+
+  // console.warn("New line:\n  " + value);
 
   self.lineBuffer.push(value);
   self._sendLines();
@@ -444,22 +515,23 @@ TinyG.prototype._write = function(value, callback) {
     return;
   }
 
-  if (typeof value !== "string") {
-      // self.emit('error', util.format("###WRITEjs: '%s'", JSON.stringify(value)))
-      self.serialPortControl.write(JSON.stringify(value) + '\n', callback);
-  }
-  else { // It's a string:
-    if (value.match(/[\n\r]$/) === null)
-      value = value + "\n";
+  // if (typeof value == 'string') {
+  //   value = JSON.stringify(value) + '\n';
+  // }
 
-    if (self.serialPortData === null || value.match(/^[{}!~]/)) {
-      // self.emit('error', util.format("###ctrl write: '%s'", JSON.stringify(value)))
-      // BTW: The optional close bracket ^^ is to appease the editor.
-      self.serialPortControl.write(value, callback);
-    } else {
-      // self.emit('error', util.format("###data write: '%s'", JSON.stringify(value)))
-      self.serialPortData.write(value, callback);
-    }
+  if (value.match(/[\n\r]$/) === null) {
+    value = value + "\n";
+  }
+
+  if (self.serialPortData === null || (value.match(/^(N[0-9]+\s*)?[{}!~\x01-\x19]/) && !value.match(/^(N[0-9]+\s*)?{\s*(clr|clear)\s*:\s*n(ull)?\s*}/))) {
+    // BTW: The optional close bracket ^^ is to appease the editor.
+    // self.emit('error', util.format("###ctrl write: '%s'", JSON.stringify(value)))
+    self.serialPortControl.write(value, callback);
+    self.emit('sentRaw', value, 'C');
+  } else {
+    // self.emit('error', util.format("###data write: '%s'", JSON.stringify(value)))
+    self.serialPortData.write(value, callback);
+    self.emit('sentRaw', value, 'D');
   }
 }; // _write
 
@@ -668,7 +740,9 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
       // 2	machine is in alarm state (shut down)
       } else if (sr.stat == 2) {
         // If the machine is in error, we're done no matter what
-        _finish(sr);
+        if (!self.timedSendsOnly) {
+          _finish(sr);
+        }
 
       // 6 is holding
       } else if (sr.stat == 6) {
@@ -923,8 +997,9 @@ TinyG.prototype.list = function(callback) {
 };
 
 
-TinyG.prototype.openFirst = function (failIfMore) {
+TinyG.prototype.openFirst = function (failIfMore, options) {
   var self = this;
+  var _options = options || {};
 
   if (failIfMore === undefined || failIfMore === null) {
     failIfMore = false;
@@ -937,9 +1012,10 @@ TinyG.prototype.openFirst = function (failIfMore) {
 
     if (results.length == 1 || (failIfMore == false && results.length > 0)) {
       if (results[0].dataPortPath) {
-        return self.open(results[0].path, {dataPortPath : results[0].dataPortPath});
+        _options.dataPortPath = results[0].dataPortPath;
+        return self.open(results[0].path, _options);
       } else {
-        return self.open(results[0].path);
+        return self.open(results[0].path, _options);
       }
     } else if (results.length > 1) {
       var errText = ("Error: Autodetect found multiple TinyGs:\n");

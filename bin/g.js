@@ -58,7 +58,12 @@ var args = require('nomnom')
     init: {
       abbr: 'i',
       metavar: 'INITFILE',
-      help: "Oprional path of a json file containing the initial settings to pass to the TinyG after connection."
+      help: "Optional path of a json file containing the initial settings to pass to the TinyG after connection."
+    },
+    timed: {
+      abbr: 'T',
+      flag: true,
+      help: "Read the incoming file looking for timecodes at the beginning of lines and use that for sending (TESTING ONLY)"
     }
   }).parse();
 
@@ -195,7 +200,7 @@ function sendFile(fileName) {
     sendingFile = true;
     g.sendFile(fileName || process.stdin, function(err) {
       if (err) {
-        log(util.format("Error returned: %s\n", err));
+        log(util.format("Error returned: %s\n", util.inspect(err)));
       }
       log(util.format("### Done sending\n"));
       log_c(util.format("### Done sending\n"));
@@ -208,7 +213,7 @@ function sendFile(fileName) {
         rl.close();
         // rl = null;
       }
-
+      log("closing...");
       g.close();
 
     });
@@ -262,9 +267,9 @@ function openTinyG() {
   var opened = false;
 
   if (!args.port) {
-    g.openFirst(/*fail if multiple:*/ true);
+    g.openFirst(/*fail if multiple:*/ true, {timedSendsOnly: args.timed});
   } else {
-    g.open(args.port, {dataPortPath : args.dataport});
+    g.open(args.port, {dataPortPath : args.dataport, timedSendsOnly: args.timed});
   }
 
   g.on('open', function() {
@@ -432,11 +437,11 @@ function openTinyG() {
     }
 
     g.on('data', function(data) {
-      log(util.format('<%s\n', data));
+      log(util.format('[[<%d]]%s\n', Date.now(), data.replace(/\n+/, '\n')));
     });
 
-    g.on('sentGcode', function(data) {
-      log(util.format('>%s\n', data.gcode));
+    g.on('sentRaw', function(data, channel) {
+      log(util.format('[[%s%d]]%s', channel, Date.now(), data.replace(/\n+/g, '\n') ));
     });
 
     g.on('close', function() {
