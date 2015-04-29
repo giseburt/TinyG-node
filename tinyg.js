@@ -60,7 +60,7 @@ function TinyG() {
       // Mark everything else with a bullet
       // console.log('part: ' + part.replace(/([\x00-\x20])/, "•"));
 
-      emitter.emit('data', part);
+      self.emit('data', part);
 
       if (part[0] == "{" /* make the IDE happy: } */) {
         try {
@@ -425,8 +425,8 @@ TinyG.prototype.write = function(value) {
   if (self.timedSendsOnly && typeof value == "string") {
     console.warn("Parsing:" + value);
 
-    if (timecodeMatch = value.match(/^(N[0-9]+\s*)\[\[([GC])([0-9]+)\]\](.*)/)) {
-      var line_num = timecodeMatch[1];
+    if (timecodeMatch = value.match(/^(N[0-9]+\s*)?\[\[([GC])([0-9]+)\]\](.*)/)) {
+      var line_num = timecodeMatch[1] || "";
       var channel = timecodeMatch[2]; // ignored
       var timecode = timecodeMatch[3];
       value = line_num + timecodeMatch[4];
@@ -445,7 +445,7 @@ TinyG.prototype.write = function(value) {
         start_actual_time = Date.now();
       }
 
-      var delay_time = ((new_timecode.timecode - start_timecode)-(Date.now() - start_actual_time))*5;
+      var delay_time = ((new_timecode.timecode - start_timecode)-(Date.now() - start_actual_time));
       previous_timecode = new_timecode;
 
       setTimeout(function () {
@@ -657,7 +657,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
 
         // Cleanup and remove blank or all-whitespace lines.
         if (!line.match(/^\s*$/)) {
-          if (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) {
+          if (!self.timedSendsOnly && (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) ) {
             line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
             // self.emit('error', util.format(line));
             nextlineNumber++;
