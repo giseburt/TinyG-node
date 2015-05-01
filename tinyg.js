@@ -423,15 +423,11 @@ TinyG.prototype.write = function(value) {
   var self = this;
 
   if (self.timedSendsOnly && typeof value == "string") {
-    console.warn("Parsing:" + value);
-
     if (timecodeMatch = value.match(/^(N[0-9]+\s*)?\[\[([GC])([0-9]+)\]\](.*)/)) {
       var line_num = timecodeMatch[1] || "";
       var channel = timecodeMatch[2]; // ignored
       var timecode = timecodeMatch[3];
       value = line_num + timecodeMatch[4];
-
-      console.warn("Resutls: " + value + "["+(timecode)+"]");
 
       var new_timecode = {
         channel: channel,
@@ -449,18 +445,13 @@ TinyG.prototype.write = function(value) {
       previous_timecode = new_timecode;
 
       setTimeout(function () {
-        console.warn("**Sending " + new_timecode.lines + " lines");
         self.lineCountToSend += new_timecode.lines;
-        // console.warn("**self.lineCountToSend " + self.lineCountToSend + " lines");
         new_timecode.lines = 0;
         new_timecode.fired = true;
         self._sendLines();
       }, delay_time);
-
-      console.warn("Set to send 1 line in " + delay_time + "ms");
     } else {
       previous_timecode.lines++;
-      console.warn("Changed it to send " + previous_timecode.lines);
     }
 
     // Normally, this would be a terrible idea..., but we're testing, so we do this:
@@ -489,8 +480,6 @@ TinyG.prototype.write = function(value) {
     value = value + "\n";
   }
 
-  // console.warn("New line:\n  " + value);
-
   self.lineBuffer.push(value);
   self._sendLines();
 }
@@ -515,9 +504,9 @@ TinyG.prototype._write = function(value, callback) {
     return;
   }
 
-  // if (typeof value == 'string') {
-  //   value = JSON.stringify(value) + '\n';
-  // }
+  if (typeof value !== 'string') {
+    value = JSON.stringify(value) + '\n';
+  }
 
   if (value.match(/[\n\r]$/) === null) {
     value = value + "\n";
@@ -556,7 +545,7 @@ TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
     }
   }
 
-  var _respHandler = function (r) {
+  var _onResponse = function (r) {
     deferred.notify(r);
     if (fullfilledFunction(r)) {
       try {
@@ -567,12 +556,26 @@ TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
     }
   }
 
-  var _errHandler = function(e) {
+  var _onError = function(e) {
     deferred.notify(e);
   }
 
-  self.on('response', _respHandler);
-  self.on('error', _errHandler);
+  var _doStatusChanged = function(sr) {
+    deferred.notify({sr:sr});
+
+    if (fullfilledFunction({sr:sr})) {
+      try {
+        deferred.resolve(sr);
+      } catch(e) {
+        deferred.reject(e);
+      }
+    }
+}
+
+
+  self.on('response', _onResponse);
+  self.on('error', _onError);
+  self.on('statusChanged', _doStatusChanged);
   // Uncomment to debug event handler removal
   // console.log("response l>", util.inspect(self.listeners('response'))); // [ [Function] ]
   // console.log("error l>", util.inspect(self.listeners('error'))); // [ [Function] ]
@@ -586,9 +589,11 @@ TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
     // console.log(">>>", toSend); // uncommment to debug writes
     self.write(data);
   }
+
   return deferred.promise.finally(function () {
-    self.removeListener('response', _respHandler);
-    self.removeListener('error', _errHandler);
+    self.removeListener('statusChanged', _doStatusChanged);
+    self.removeListener('response', _onResponse);
+    self.removeListener('error', _onError);
   })
   // .progress(console.log) // uncomment to debug responses
   ;
