@@ -366,7 +366,7 @@ TinyG.prototype._sendLines = function() {
 
   var lastLineSent = 0;
 
-  console.log(util.inspect({len: self.lineBuffer.length, lineCountToSend: self.lineCountToSend}))
+  // console.log(util.inspect({len: self.lineBuffer.length, lineCountToSend: self.lineCountToSend}))
 
   while (self.lineBuffer.length > 0 && self.lineCountToSend > 0) {
     var line = self.lineBuffer.shift();
