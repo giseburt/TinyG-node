@@ -545,11 +545,11 @@ TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
     }
   }
 
-  var _onResponse = function (r) {
-    deferred.notify(r);
-    if (fullfilledFunction(r)) {
+  var _onResponse = function (r, f) {
+    deferred.notify(r, f);
+    if (fullfilledFunction(r, f)) {
       try {
-        deferred.resolve(r);
+        deferred.resolve(r, f);
       } catch(e) {
         deferred.reject(e);
       }
