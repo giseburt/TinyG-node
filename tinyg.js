@@ -160,7 +160,7 @@ TinyG.prototype.open = function (path, options) {
     options[key] = options[key] || self._baseOptions[key];
   }
 
-  console.log(util.inspect(options));
+  // console.log(util.inspect(options));
   self.dataPortPath = options.dataPortPath;
   self.serialPortControl = new SerialPort(path, options);
   self.timedSendsOnly = options.timedSendsOnly;
