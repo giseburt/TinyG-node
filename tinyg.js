@@ -628,7 +628,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
 
   var needLines = 1; // We initially need lines
   var readBuffer = "";
-  var nextlineNumber = 1;
+  // var nextlineNumber = 1;
 
   // keep track of "doneness"
   var fileEnded = false;
@@ -662,11 +662,11 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
 
         // Cleanup and remove blank or all-whitespace lines.
         if (!line.match(/^\s*$/)) {
-          if (!self.timedSendsOnly && (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) ) {
-            line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
-            // self.emit('error', util.format(line));
-            nextlineNumber++;
-          }
+          // if (!self.timedSendsOnly && (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) ) {
+          //   line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
+          //   // self.emit('error', util.format(line));
+          //   nextlineNumber++;
+          // }
 
           g.write(line);
           needLines--;
@@ -746,7 +746,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
       } else if (sr.stat == 2) {
         // If the machine is in error, we're done no matter what
         if (!self.timedSendsOnly) {
-          _finish(sr);
+          // _finish(sr);
         }
 
       // 6 is holding
@@ -958,25 +958,46 @@ TinyG.prototype.list = function(callback) {
         // TBD
       } else if (process.platform === 'darwin') {
         // MacOS X:
-        //  Command: { comName: '/dev/cu.usbmodem001', manufacturer: 'Synthetos', serialNumber: '002', pnpId: '', locationId: '0x14530000', vendorId: '0x1d50', productId: '0x606d' }
-        //     Data: { comName: '/dev/cu.usbmodem003', manufacturer: '', serialNumber: '', pnpId: '', locationId: '', vendorId: '', productId: '' }
+        //  Command:
+        //   {
+        //     comName: '/dev/cu.usbmodem142433',
+        //     manufacturer: 'Synthetos',
+        //     serialNumber: '0084-d639-29c6-08c6',
+        //     pnpId: '',
+        //     locationId: '0x14243000',
+        //     vendorId: '0x1d50',
+        //     productId: '0x606d'
+        //   }
+        //  Data:
+        //   {
+        //     comName: '/dev/cu.usbmodem142431',
+        //     manufacturer: 'Synthetos',
+        //     serialNumber: '0084-d639-29c6-08c6',
+        //     pnpId: '',
+        //     locationId: '0x14243000',
+        //     vendorId: '0x1d50',
+        //     productId: '0x606d'
+        //   }
 
-        // console.log(util.inspect(item));
+        // console.log(util.inspect(item) + "\n\n--\n\n");
 
         if (item.manufacturer == 'FTDI') {
           tinygs.push({path: item.comName});
         } else if (item.manufacturer == 'Synthetos') {
-          tinygs.push({path: item.comName});
-        } else if (item.manufacturer == '') {
-          if (tinygs.length > 0 && (x = tinygs[tinygs.length-1].path.match(/^(.*?)([0-9]+)/)) && (y = item.comName.match(/^(.*?)([0-9]+)/)) && x[1] == y[1]) {
-            x[2] = parseInt(x[2]);
-            y[2] = parseInt(y[2]);
-
-            if (((x[2] == 1) && (y[2] == 3)) || (x[2]+1 == y[2]) || (x[2]+2 == y[2])) {
-              tinygs[tinygs.length-1].dataPortPath = item.comName;
-              continue;
-            }
+          // if (tinygs.length > 0 && (x = tinygs[tinygs.length-1].path.match(/^(.*?)([0-9]+)/)) && (y = item.comName.match(/^(.*?)([0-9]+)/)) && x[1] == y[1]) {
+          //   x[2] = parseInt(x[2]);
+          //   y[2] = parseInt(y[2]);
+          //
+          //   if (((x[2] == 1) && (y[2] == 3)) || (x[2]+1 == y[2]) || (x[2]+2 == y[2])) {
+          //     tinygs[tinygs.length-1].dataPortPath = item.comName;
+          //     continue;
+          //   }
+          if (tinygs.length > 0 && (tinygs[tinygs.length-1].serialNumber = item.serialNumber)) {
+            tinygs[tinygs.length-1].dataPortPath = item.comName;
+          } else {
+            tinygs.push({path: item.comName, serialNumber: item.serialNumber});
           }
+          // console.log(util.inspect(tinygs) + " **");
         }
       } else {
         // Linux:
@@ -1023,14 +1044,14 @@ TinyG.prototype.openFirst = function (failIfMore, options) {
         return self.open(results[0].path, _options);
       }
     } else if (results.length > 1) {
-      var errText = ("Error: Autodetect found multiple TinyGs:\n");
+      var errText;//("Error: Autodetect found multiple TinyGs:\n");
 
       for (var i = 0; i < results.length; i++) {
         var item = results[i];
         if (item.dataPortPath) {
-          errText += ("\tFound command port: '%s' with data port '%s'\n", item.path, item.dataPortPath);
+          errText = ("Error: Autodetect found multiple TinyGs:\n\tFound command port: '%s' with data port '%s'\n", item.path, item.dataPortPath);
         } else {
-          errText += ("\tFound port: '%s'\n", item.path);
+          errText = ("Error: Autodetect found multiple TinyGs:\n\tFound port: '%s'\n", item.path);
         }
       }
       throw new TinyGError(errText, results);
