@@ -21,7 +21,7 @@
     "nomnom": "^1.8.0",
     "q": "^1.1.2",
     "relaxed-json": "^0.2.8",
-    "serialport": "^1.6.3",
+    "serialport": "^2.0.5",
     "sprintf": "^0.1.4"
   },
   "bin": {
