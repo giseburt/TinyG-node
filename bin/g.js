@@ -85,7 +85,7 @@ var sendingFile = false;
 var latestMotionStatus = 0;
 
 if (args.log) {
-  logStream = fs.createWriteStream(args.log, 'r+');
+  logStream = fs.createWriteStream(args.log, { flags: 'a' });
   logStream.write('## Opened log: ' + startTime.toLocaleString() + "\n");
 }
 
