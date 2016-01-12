@@ -146,7 +146,7 @@ function parseCommand(line) {
       log_c(util.format("Got cmd '%s' and args '%s'", cmd, args));
 
       if (cmd.match(/^q(uit)?$/)) {
-        var e = util.format("## Recieved QUIT command in State '%s' -- sending CTRL-D and exiting.\n", STAT_CODES[latestMotionStatus]);
+        var e = util.format("## Received QUIT command in State '%s' -- sending CTRL-D and exiting.\n", STAT_CODES[latestMotionStatus]);
         log(e);
         if (interactive) {
           process.stdout.write(chalk.dim(e));
@@ -302,7 +302,7 @@ function openTinyG() {
               return;
             }
             else if (k.name == 'c') {
-              var e = util.format("## Recieved CTRL-C in State '%s' -- sending CTRL-D and exiting.\n", STAT_CODES[latestMotionStatus]);
+              var e = util.format("## Received CTRL-C in State '%s' -- sending CTRL-D and exiting.\n", STAT_CODES[latestMotionStatus]);
               log(e);
               if (interactive) {
                 process.stdout.write(chalk.dim(e));
