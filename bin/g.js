@@ -246,7 +246,7 @@ function sendFile(fileName) {
         readBuffer = lines.pop();
 
         lines.forEach(function (line) {
-          if (line.match(/^\s*$/))
+          if (line.match(/^(?:[nN][0-9]+\s*)?(.*)$/))
             return;
 
           maxLineNumber++;
