@@ -268,6 +268,9 @@ TinyG.prototype._complete_open = function (doSetup) {
       // // get the status report and queue report
       // self.write({sr:null});
       //
+      // promise = promise.then(function () {
+      //   return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
+      // });
       promise = promise.then(function () {
         return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
       });
