@@ -34,7 +34,8 @@ function TinyG() {
   self.timedSendsOnly = false;
   self.doneReading = false;
   self.lineBuffer = []; // start it out ensuring that the machine is reset;
-  self.lineCountToSend = 0;
+  self.linesRequested = 0; // total number of lines to send, including self.linesSent
+  self.linesSent = 0;      // number of lines that have been sent
   self.lineInLastSR = 0;
   self.ignoredResponses = 0; // Keep track of out-of-band commands to ignore responses to
 
@@ -233,7 +234,7 @@ TinyG.prototype._complete_open = function (doSetup) {
       // self.write("M2"); //Reset many settings
       // self.write({ee:0}); //Set echo off, it'll confuse the parser
       // self.write({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
-      // // self.write({jv:4}); //Set JSON verbosity to 5 (max)
+      // self.write({jv:4}); //Set JSON verbosity to 5 (max)
       var promise = self.set({jv:4}); //Set JSON verbosity to 2 (medium)
       // // self.write({qv:2}); //Set queue report verbosity
       // self.write({qv:0}); //Set queue report verbosity (off)
@@ -271,7 +272,7 @@ TinyG.prototype._complete_open = function (doSetup) {
         return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
       });
       promise = promise.then(function () {
-        return self.set({qv:2}); //Set queue report verbosity
+        return self.set({jv:4}); //Set queue report verbosity
       });
       if (self.serialPortData === null) { // we're single channel
         promise = promise.then(function () {
@@ -289,14 +290,14 @@ TinyG.prototype._complete_open = function (doSetup) {
   if (self.serialPortData === null) {
     self.write({rx:null});
   } else if (!self.timedSendsOnly) {
-    self.lineCountToSend = 1000;
+    self.linesRequested = 5;
   }
 
   var _onResponse = function(r) {
     if (r.hasOwnProperty("rx") && self.serialPortData === null) {
       self.ignoredResponses--;
       if (!self.timedSendsOnly) {
-        self.lineCountToSend = r.rx - 1;
+        self.linesRequested = r.rx - 1;
       }
       // -1 is okay, that just means wait until we've sent two lines to send again
     } else if (self.ignoredResponses > 0) {
@@ -304,15 +305,11 @@ TinyG.prototype._complete_open = function (doSetup) {
       return;
     } else {
         if (!self.timedSendsOnly) {
-          self.lineCountToSend++;
+          self.linesRequested++;
         }
     }
 
-    // console.log("self.lineCountToSend: " + self.lineCountToSend)
-
-    if ((!self.timedSendsOnly) && (self.lineCountToSend > 0)){
-      self._sendLines();
-    }
+    self._sendLines();
   }; // _onResponse
   self.on('response', _onResponse);
 
@@ -366,23 +363,23 @@ TinyG.prototype._sendLines = function() {
 
   var lastLineSent = 0;
 
-  // console.log(util.inspect({len: self.lineBuffer.length, lineCountToSend: self.lineCountToSend}))
+  //console.log(util.inspect({len: self.lineBuffer.length, lineCountToSend: (self.linesRequested - self.linesSent), linesRequested: self.linesRequested, linesSent: self.linesSent}))
 
-  while (self.lineBuffer.length > 0 && self.lineCountToSend > 0) {
+  while (self.lineBuffer.length > 0 && (self.linesRequested - self.linesSent) > 0) {
     var line = self.lineBuffer.shift();
     self._write(line);
     lastLineSent = self.parseGcode(line, {});
-    self.lineCountToSend--;
+    self.linesSent++;
     // console.log("self.lineBuffer.length: " + self.lineBuffer.length)
   }
 
   if (self.doneReading) {
-    // console.log("self.doneReading: " + self.doneReading)
+    console.log("self.doneReading: " + self.doneReading)
     if (self.lineBuffer.length === 0) {
       self.emit('doneSending');
     }
-  } else if (self.lineBuffer.length < self.lineCountToSend) {
-    self.emit('needLines', self.lineCountToSend - self.lineBuffer.length);
+  } else if (self.lineBuffer.length < ((self.linesRequested - self.linesSent) + 100)) {
+    self.emit('needLines', (self.linesRequested - self.linesSent) - self.lineBuffer.length);
   }
 
   self.emit('sentLine', lastLineSent);
@@ -445,7 +442,7 @@ TinyG.prototype.write = function(value) {
       previous_timecode = new_timecode;
 
       setTimeout(function () {
-        self.lineCountToSend += new_timecode.lines;
+        self.linesRequested += new_timecode.lines;
         new_timecode.lines = 0;
         new_timecode.fired = true;
         self._sendLines();
@@ -459,6 +456,19 @@ TinyG.prototype.write = function(value) {
     value = value.replace(/\\x([0-9a-fA-F]+)/g, function(a,b) { return String.fromCharCode(parseInt(b,16)  ); })
   }
 
+  // Handle getting passed an array
+  else if (Array.isArray(value)) {
+    value.forEach(function(v) {
+      if (v.match(/[\n\r]$/)) {
+        v = v + "\n";
+      }
+
+      self.lineBuffer.push(v);
+    });
+    self._sendLines();
+    return;
+  }
+
   // Specials bypass the buffer! Except when using timed sends...
   else if ((typeof value !== "string" || value.match(/^[{}!~%\x03\x04]$/))) {
     // if (typeof value === "string" && value.match(/^%$/)) {
@@ -470,7 +480,7 @@ TinyG.prototype.write = function(value) {
     // }
     // We don't get a response for single-character codes, so don't ignore them...
     if (typeof value !== "string" || !value.match(/^[!~%\x03\x04]$/)) {
-      self.ignoredResponses++;
+      // self.ignoredResponses++;
     }
     self._write(value);
     return;
@@ -581,7 +591,7 @@ TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
   // console.log("error l>", util.inspect(self.listeners('error'))); // [ [Function] ]
 
 
-  if (util.isArray(data)) {
+  if (Array.isArray(data)) {
     data.forEach(function(v) {
       self.write(v);
     });
@@ -628,7 +638,8 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
 
   var needLines = 1; // We initially need lines
   var readBuffer = "";
-  // var nextlineNumber = 1;
+  var nextlineNumber = 1;
+  var lastlineNumberSeen = 0;
 
   // keep track of "doneness"
   var fileEnded = false;
@@ -657,22 +668,25 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
       // If there is leftover data,
       readBuffer = lines.pop();
 
-      while (lines.length) {
-        var line = lines.shift();
+      lines = lines.filter(function(line) {
+        return !line.match(/^\s*$/);
+      });
 
-        // Cleanup and remove blank or all-whitespace lines.
-        if (!line.match(/^\s*$/)) {
-          // if (!self.timedSendsOnly && (lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/)) ) {
-          //   line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
-          //   // self.emit('error', util.format(line));
-          //   nextlineNumber++;
-          // }
+      if (!self.timedSendsOnly) {
+        lines = lines.map(function (line) {
+          lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/);
+          if (lineMatch) {
+            line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
+            // self.emit('error', util.format(line));
+            nextlineNumber++;
+          }
+          return line;
+        })
+      }
 
-          g.write(line);
-          needLines--;
-        } // if not empty line
+      g.write(lines);
 
-      } // while
+      needLines -= lines.length;
 
       if (needLines < 0) {
         needLines = 0;
@@ -681,6 +695,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
 
     if (fileEnded) {
       g.setDoneReading(true);
+      // console.warn("DONE READING!!")
     }
 
     _in_readLines = false;
@@ -760,10 +775,24 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
     } // if (sr.stat)
   }; // _doStatusChanged
 
+
+  var _onResponse = function (r, f) {
+    // Debugging code
+    // if (!r.n) {
+    //   console.log("MISSING LINE NUMBER!! Should be:" + (lastlineNumberSeen+1).toString());
+    //   return;
+    // }
+    // if (r.n != lastlineNumberSeen+1) {
+    //   console.log("LINE NUMBER OUT OF SEQUENCE!! Should be:" + (lastlineNumberSeen+1).toString() + " got:" + r.n.toString());
+    // }
+    lastlineNumberSeen = r.n;
+  } // _onResponse
+
   var _finish = function (err) {
     g.removeListener('needLines', _doNeedLines);
     g.removeListener('doneSending', _doDoneSending);
     g.removeListener('statusChanged', _doStatusChanged);
+    g.removeListener('response', _onResponse);
 
     // reset "doneReading" so we can send more ...
     g.setDoneReading(false);
@@ -779,11 +808,11 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
     }
   };
 
-
   // Setup the listeners..
   g.on('needLines', _doNeedLines);
   g.on('doneSending', _doDoneSending);
   g.on('statusChanged', _doStatusChanged);
+  g.on('response', _onResponse);
 };
 
 TinyG.prototype.get = function(key) {
