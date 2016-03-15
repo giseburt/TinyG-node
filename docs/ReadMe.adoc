@@ -99,12 +99,12 @@ TinyGResponseError::
 
 TinyGOpenError::
   * *Meaning*: TinyG failed to open a connection. This may occur if one was already open, in which case there is no change to the already-open connection, but the new one was not attempted.
-  * *When*: Any time after `g.open()` has been called.
+  * *When*: Any time after <<open,`g.open()`>> has been called.
   * *Data Contents*: _None._
 
 TinyGSerialPortError::
   * *Meaning*: The underlying serialport object had an error.
-  * *When*: Anytime after `g.open()` was called.
+  * *When*: Anytime after <<open,`g.open()`>> was called.
   * *Data contents*: The raw error object from serialport.
 
 TinyGWriteError::
@@ -118,61 +118,61 @@ TinyGReadStreamError::
   * *Data Contents*: The raw error from readStream.
 
 TinyGOpenFirstError::
-  * *Meaning*: `g.openFirst()` was unable to open a TinyG.
+  * *Meaning*: <<openFirst,`g.openFirst()`>> was unable to open a TinyG.
   * *When*: After calling `g.openFirst()`.
-  * *Data Contents*: The `results` value returned by `g.list()`.
+  * *Data Contents*: The `results` value returned by <<list,`g.list()`>>.
 
 TinyGOpenFirstListError::
-  * *Meaning*: `g.openFirst()` was unable to list TinyGs.
+  * *Meaning*: <<openFirst,`g.openFirst()`>> was unable to list TinyGs.
   * *When*: After calling `g.openFirst()`.
-  * *Data Contents*: The `err` value returned by `g.list()`.
+  * *Data Contents*: The `err` value returned by <<list,`g.list()`>>.
 
 
 ### Classes and Methods
 
-Class TinyG::
-  * [[open]]`open(` _path_ `,` _options_ `)`::
-  ** Open the connection.
+#### Class TinyG::
+##### [[open]]`open(` _path_ `,` _options_ `)`
+  * Open the connection.
   ** *Returns:* _nothing_
   ** `path`:
   ** `options`:
 
-  * [[close]]`close()`::
-  ** Close the connection.
+##### [[close]]`close()`
+  * Close the connection.
   ** *Returns:* _nothing_
 
-  * [[write]]`write(` _value_ `)`::
-  ** Write value to the TinyG.
+##### [[write]]`write(` _value_ `)`
+  * Write value to the TinyG.
   ** *Returns:* _nothing_
   ** `value`:
 
-  * [[write]]`writeWithPromise(` _value_ `)`::
-  ** Write value to the TinyG.
+##### [[writeWithPromise]]`writeWithPromise(` _value_ `)`
+  * Write value to the TinyG.
   ** *Returns:* Promise.
   ** `value`:
 
-  * [[set]]`set(` _value_ `)`::
-  ** Set the given value on the TinyG.
+##### [[set]]`set(` _value_ `)`
+  * Set the given value on the TinyG.
   ** *Returns:* Promise
   ** `value`:
 
-  * [[get]]`get(` _key_ `)`::
-  ** Retrieve the value of the given key from the TinyG.
+##### [[get]]`get(` _key_ `)`
+  * Retrieve the value of the given key from the TinyG.
   ** *Returns:* Promise
   ** `key`:
 
-  * [[sendFile]]`sendFile(` _filename_or_stdin_ `,` _done_callback_ `)`::
-  ** *Returns:* _nothing_
+##### [[sendFile]]`sendFile(` _filename_or_stdin_ `,` _done_callback_ `)`
+  * *Returns:* _nothing_
   ** `filename_or_stdin`: Either a path name (in a string) or a `readStream` object (such as `process.stdin`).
   ** `done_callback` (_optional_): A function for the TinyG object to call when the file has finished sending. This will only be called after all lines have been sent AND `stat` has gone to 3 (movement stopped), 4 (program end via `M2` or `M30`), or 6 (alarm).
 
-  * [[list]]`list(` _callback_ `)`::
-  ** Get a list of TinyGs available.
+##### [[list]]`list(` _callback_ `)`
+  * Get a list of TinyGs available.
   ** *Returns:* _nothing_
   ** `callback`:
 
-  * [[openFirst]]`openFirst(` _failIfMore_, _options_ `)`::
-  ** Get a list of TinyGs available.
+##### [[openFirst]]`openFirst(` _failIfMore_, _options_ `)`
+  * Get a list of TinyGs available.
   ** *Returns:* _nothing_
   ** `failIfMore`:
   ** `options`:
