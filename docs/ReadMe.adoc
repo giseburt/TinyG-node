@@ -1,5 +1,5 @@
 :toc: macro
-:toclevels: 4
+:toclevels: 6
 :icons: font
 
 toc::[]
@@ -130,7 +130,8 @@ TinyGOpenFirstListError::
 
 ### Classes and Methods
 
-#### Class TinyG::
+#### Class TinyG
+
 ##### [[open]]`open(` _path_ `,` _options_ `)`
   * Open the connection.
   ** *Returns:* _nothing_
