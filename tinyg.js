@@ -446,7 +446,7 @@ TinyG.prototype.write = function(value) {
     // }
     // We don't get a response for single-character codes, so don't ignore them...
     if (typeof value !== "string" || !value.match(/^[!~%\x03\x04]$/)) {
-      // self.ignoredResponses++;
+      self.ignoredResponses++;
     }
     self._write(value);
     return;
@@ -500,19 +500,19 @@ TinyG.prototype._write = function(value, callback) {
   }
 }; // _write
 
-TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
+TinyG.prototype.writeWithPromise = function(data, fulfilledFunction) {
   var self = this;
 
   // This will call write, but hand you back a promise that will be fulfilled
-  // either once fullfilledFunction returns true OR, if fullfilledFunction is
+  // either once fulfilledFunction returns true OR, if fulfilledFunction is
   // null, when the "stat" in a status report comes back as 3 "STOP".
 
   // If data is an array, it will call write() for each element of the array.
 
   var deferred = Q.defer();
 
-  if (fullfilledFunction === undefined || fullfilledFunction === null) {
-    fullfilledFunction = function (r) {
+  if (fulfilledFunction === undefined || fulfilledFunction === null) {
+    fulfilledFunction = function (r) {
       if (r && r['sr'] && r['sr']['stat'] && r['sr']['stat'] == 3) {
         return true;
       }
@@ -523,7 +523,7 @@ TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
 
   var _onResponse = function (r, f) {
     deferred.notify(r, f);
-    if (fullfilledFunction(r, f)) {
+    if (fulfilledFunction(r, f)) {
       try {
         deferred.resolve(r, f);
       } catch(e) {
@@ -539,7 +539,7 @@ TinyG.prototype.writeWithPromise = function(data, fullfilledFunction) {
   var _doStatusChanged = function(sr) {
     deferred.notify({sr:sr});
 
-    if (fullfilledFunction({sr:sr})) {
+    if (fulfilledFunction({sr:sr})) {
       try {
         deferred.resolve(sr);
       } catch(e) {
@@ -1015,12 +1015,12 @@ TinyG.prototype.list = function(callback) {
 };
 
 
-TinyG.prototype.openFirst = function (failIfMore, options) {
+TinyG.prototype.openFirst = function (fail_if_more, options) {
   var self = this;
   var _options = options || {};
 
-  if (failIfMore === undefined || failIfMore === null) {
-    failIfMore = false;
+  if (fail_if_more === undefined || fail_if_more === null) {
+    fail_if_more = false;
   }
 
   self.list(function (err, results) {
@@ -1029,7 +1029,7 @@ TinyG.prototype.openFirst = function (failIfMore, options) {
       return;
     }
 
-    if (results.length == 1 || (failIfMore == false && results.length > 0)) {
+    if (results.length == 1 || (fail_if_more == false && results.length > 0)) {
       if (results[0].dataPortPath) {
         _options.dataPortPath = results[0].dataPortPath;
         return self.open(results[0].path, _options);

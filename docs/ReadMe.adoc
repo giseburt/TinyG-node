@@ -132,48 +132,189 @@ TinyGOpenFirstListError::
 
 #### Class TinyG
 
-##### [[open]]`open(` _path_ `,` _options_ `)`
-  * Open the connection.
-  ** *Returns:* _nothing_
-  ** `path`:
-  ** `options`:
+[[open]]
+##### open( _path_or_port_, _options_ )
+  * Open a connection to a TinyG. (For G2 Core devices this may use one or two serial ports.)
++
+--
+  *Returns:*:: _nothing_
+  `path_or_port`::
+  * `string` representing the path (or port name on Windows) of the serial port of the TinyG.
+  * For G2 Core devices, this is the Control serial port, and will be opened first.
+  `options`::
+  * `object` containing additional options:
+  `dataPortPath`:::
+  ** A `string` representing the path (or port name) of the Data (secondary) serial port for G2 Core devices.
 
-##### [[close]]`close()`
+[source,javascript]
+.open-example.js
+----
+var TinyG = require("tinyg");
+var g = new TinyG();
+
+// For a single port connection:
+g.open('/dev/cu.usbmodem142411', {dataPortPath : args.dataport});
+
+// OR, for a G2 Core device with two virtual ports:
+var list_results = { // see g.list() for how to get this structure
+  path: '/dev/cu.usbmodem12345',
+  dataPortPath: '/dev/cu.usbmodem12346'
+}
+g.open(list_results.path, {dataPortPath : list_results.dataPortPath});
+----
+<1> <<list,`g.list()`>>
+--
+
+[[close]]
+##### close()
   * Close the connection.
-  ** *Returns:* _nothing_
++
+--
+  *Returns:*:: _nothing_
+--
 
-##### [[write]]`write(` _value_ `)`
+[[write]]
+##### write( _value_ )
   * Write value to the TinyG.
-  ** *Returns:* _nothing_
-  ** `value`:
+  *Returns:*:: _nothing_
+  `value`::
+  *** May be a `string`, `object`, or array-like (according to https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/isArray[`Array.isArray(value)`]).
+  *** For strings:
++
+--
+  * A line-ending (`\n`) is added if one is missing
+  * The string it checked for single-character commands (https://github.com/synthetos/TinyG/wiki/TinyG-Feedhold-and-Resume[Feedhold, Resume, etc.]) or bare JSON commands (https://github.com/synthetos/TinyG/wiki/JSON-Operation[JSON Operation]), and those will be sent immediately. If there are two ports, then they will be sent down the Control channel instead of the Data channel.
+  * All other strings are added to the line buffer and sent in order as the TinyG is ready for them. If there are two ports, lines from the line buffer are sent down the Data channel.
 
-##### [[writeWithPromise]]`writeWithPromise(` _value_ `)`
-  * Write value to the TinyG.
-  ** *Returns:* Promise.
-  ** `value`:
+[source,javascript]
+.write-string-example.js
+----
+// Assumes g is a TinyG object that has been opened.
+// Add "g0x10\n" to the line buffer, which will be sent in order as the TinyG is ready.
+g.write("g0x10");
 
-##### [[set]]`set(` _value_ `)`
+// Send "{sr:n}\n" immediately.
+// Note: g.set() should be used for this purpose instead!
+g.write('{sr:n}\n');
+
+// Issue a feed hold ("pause") immediately.
+g.write('!');
+----
+<1> <<set,`g.set()`>>
+--
+
+  *** For objects that are not array-like:
++
+--
+  * The object is sent to `JSON.stringify(value) + '\n';`, then sent immediately.
+
+[source,javascript]
+.write-object-example.js
+----
+// Assumes g is a TinyG object that has been opened.
+// Send '{"sr":null}\n' immediately.
+// Note: g.set() should be used for this purpose instead!
+g.write({sr: null});
+----
+<1> <<set,`g.set()`>>
+--
+
+  *** For "Arrays" (objects that are array-like according to https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/isArray[`Array.isArray(value)`]):
++
+--
+  * Each item of the array is checked for a line-ending (`\n`) and then sent directly to the line buffer.
+  * *Do NOT send commands or JSON this way.* They will _not_ get sent ahead of moves or put in the Command channel.
+  * This is intended for sending files or chunks of GCode only, and is the most efficient way to do so.
+
+[source,javascript]
+.write-array-example.js
+----
+// Assumes g is a TinyG object that has been opened.
+// Send the following lines to the line buffer with minimal processing:
+var lines = "G1 F2000\nX0 Y100\nX100\nY0\nX0\nM2"
+g.write(lines.split('\n'));
+----
+--
+
+
+[[writeWithPromise]]
+##### writeWithPromise( _value_, _fulfilled_function_ )
+  * Write value to the TinyG, returning a promise to be fulfilled when the TinyG responds.
++
+--
+  *Returns:*:: http://documentup.com/kriskowal/q/[Q promise].
+  `value`:: This is passed directly to <<write,`q.write()`>>.
+  `fullfilledFunction`::
+  * (_Optional_.) A function that will be called with every parsed response and status report from the TinyG.
+  * The function is to return `true` when that response or status report indicates that the write has completed, or `false` if it hasn't.
+
+[source,javascript]
+.writeWithPromise-example.js
+----
+// This function is to say the write is complete when the machine goes into stat 3
+//   using the 'stat' value in the status reports.
+// Requires 'stat' to be in your status reports.
+// This is almost identical to the default fulfilled function if none is provided.
+stat3_fulfilled_function = function (r) {
+  // If the response is a status report, it will be in the 'sr' key:
+  if (r && r['sr'] && r['sr']['stat'] && r['sr']['stat'] == 3) {
+    return true;
+  }
+  return false;
+}
+
+// This function looks for line number last_line to be acknowledged (via response),
+//   then for the machine to go to stat 3.
+// Requires 'stat' to be in your status reports,
+//   and JSON Verbosity of 4.
+var last_line = 32;
+var last_line_was_seen = false;
+var last_stat_seen = -1;
+last_line_seen_fulfilled_function = function (r) {
+  if (r && r['n'] && r['n'] == last_line) {
+    last_line_was_seen = true;
+  }
+  // If the response is a status report, it will be in the 'sr' key:
+  if (last_line_seen && r && r['sr'] && r['sr']['stat']) {
+    last_stat_seen = r['sr']['stat'];
+  }
+  return ((last_stat_seen == 3) && last_line_was_seen);
+}
+
+----
+<1> https://github.com/synthetos/TinyG/wiki/Status-Reports[Setting up status reports]
+<2> https://github.com/synthetos/TinyG/wiki/Status-Reports#status-report-values['stat' values]
+<3> https://github.com/synthetos/TinyG/wiki/JSON-Details#response-verbosity[JSON Verbosity]
+--
+
+
+[[set]]
+##### set( _value_ )
   * Set the given value on the TinyG.
-  ** *Returns:* Promise
-  ** `value`:
+  *Returns:*:: Promise
+  `value`::
 
-##### [[get]]`get(` _key_ `)`
+[[get]]
+##### get( _key_ )
   * Retrieve the value of the given key from the TinyG.
-  ** *Returns:* Promise
-  ** `key`:
+  *Returns:*:: Promise
+  `key`::
 
-##### [[sendFile]]`sendFile(` _filename_or_stdin_ `,` _done_callback_ `)`
-  * *Returns:* _nothing_
-  ** `filename_or_stdin`: Either a path name (in a string) or a `readStream` object (such as `process.stdin`).
-  ** `done_callback` (_optional_): A function for the TinyG object to call when the file has finished sending. This will only be called after all lines have been sent AND `stat` has gone to 3 (movement stopped), 4 (program end via `M2` or `M30`), or 6 (alarm).
+[[sendFile]]
+##### sendFile( _filename_or_stdin_ , _done_callback_ )
+  * *Returns:*:: _nothing_
+  `filename_or_stdin`:: Either a path name (in a string) or a `readStream` object (such as `process.stdin`).
+  `done_callback`:: (_Optional._) A function for the TinyG object to call when the file has finished sending. This will only be called after all lines have been sent AND `stat` has gone to 3 (movement stopped), 4 (program end via `M2` or `M30`), or 6 (alarm).
 
-##### [[list]]`list(` _callback_ `)`
+[[list]]
+##### list( _callback_ )
   * Get a list of TinyGs available.
-  ** *Returns:* _nothing_
-  ** `callback`:
+  *Returns:*:: _nothing_
+  `callback`::
 
-##### [[openFirst]]`openFirst(` _failIfMore_, _options_ `)`
+[[openFirst]]
+##### openFirst( _fail_if_more_ , _options_ )
   * Get a list of TinyGs available.
-  ** *Returns:* _nothing_
-  ** `failIfMore`:
-  ** `options`:
+  *Returns*:: _nothing_
+  `fail_if_more`::
+  `options`::
