@@ -9,10 +9,10 @@ var SerialPortModule = require("serialport"),
 
 /**** Create the TinyGError object ****/
 
-function TinyGError(message, data) {
+function TinyGError(subname, message, data) {
   Error.call(this);
-  this.name = "TinyGError:";
-  this.message = message || "TinyG Error: " + util.inspect(data, {depth: null});
+  this.name = "TinyG"+subname+"Error";
+  this.message = message || "Raw Data: " + util.inspect(data, {depth: null});
 
   this.data = data;
 };
@@ -67,7 +67,7 @@ function TinyG() {
         try {
           jsObject = RJSON.parse(part);
         } catch(err) {
-          self.emit('error', new TinyGError(util.format('### ERROR: %s parsing %s', err, part), {e: err, part: part}));
+          self.emit('error', new TinyGError("Parser", util.format('Unable to parse "%s": %s', part, err), {err: err, part: part}));
           return;
         }
 
@@ -77,28 +77,32 @@ function TinyG() {
           if (footer !== undefined) {
             if (footer[1] == 108) {
               self.emit('error', new TinyGError(
-                util.format("ERROR: TinyG reported an syntax error reading '%s': %d (based on %d bytes read)", JSON.stringify(jsObject.r), footer[1], footer[2]),
+                "Response",
+                util.format("TinyG reported an syntax error reading '%s': %d (based on %d bytes read)", JSON.stringify(jsObject.r), footer[1], footer[2]),
                 jsObject
               ));
             }
 
             else if (footer[1] == 20) {
               self.emit('error', new TinyGError(
-                util.format("ERROR: TinyG reported an internal error reading '%s': %d (based on %d bytes read)", JSON.stringify(jsObject.r), footer[1], footer[2]),
+                "Response",
+                util.format("TinyG reported an internal error reading '%s': %d (based on %d bytes read)", JSON.stringify(jsObject.r), footer[1], footer[2]),
                 jsObject
               ));
             }
 
             else if (footer[1] == 202) {
               self.emit('error', new TinyGError(
-                util.format("ERROR: TinyG reported an TOO SHORT MOVE on line %d", jsObject.r.n),
+                "Response",
+                util.format("TinyG reported an TOO SHORT MOVE on line %d", jsObject.r.n),
                 jsObject
               ));
             }
 
             else if (footer[1] != 0) {
               self.emit('error', new TinyGError(
-                util.format("ERROR: TinyG reported an error reading '%s': %d (based on %d bytes read)", JSON.stringify(jsObject.r), footer[1], footer[2]),
+                "Response",
+                util.format("TinyG reported an error reading '%s': %d (based on %d bytes read)", JSON.stringify(jsObject.r), footer[1], footer[2]),
                 jsObject
               ));
             }
@@ -154,7 +158,8 @@ TinyG.prototype.open = function (path, options) {
   var self = this;
 
   if (self.serialPortControl !== null) {
-    throw new Error("Unable to open TinyG at path '" + path + "' -- TinyG already open.");
+    self.emit('error', new TinyGError("Open", "Unable to open TinyG at path '" + path + "' -- TinyG already open.", {}));
+    return;
   }
   options = options || {};
   for (key in self._baseOptions) {
@@ -177,7 +182,7 @@ TinyG.prototype.open = function (path, options) {
   });
 
   var _onControlError = function(err) {
-    self.emit('error', new TinyGError("SerialPort Error: " + util.inspect(err), {serialPortError:err}));
+    self.emit('error', new TinyGError("SerialPort", util.inspect(err), err));
   };
 
   self.serialPortControl.on('error', _onControlError);
@@ -231,53 +236,11 @@ TinyG.prototype._complete_open = function (doSetup) {
 
   if (doSetup) {
     process.nextTick(function() {
-      // self.write("M2"); //Reset many settings
-      // self.write({ee:0}); //Set echo off, it'll confuse the parser
-      // self.write({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
-      // self.write({jv:4}); //Set JSON verbosity to 5 (max)
       var promise = self.set({jv:4}); //Set JSON verbosity to 2 (medium)
-      // // self.write({qv:2}); //Set queue report verbosity
-      // self.write({qv:0}); //Set queue report verbosity (off)
-      // self.write(
-      // {
-      //   sr:{
-      //     "posx":true,
-      //     "posy":true,
-      //     "posz":true,
-      //     "posa":true,
-      //     "feed":true,
-      //     "vel":true,
-      //     "unit":true,
-      //     "coor":true,
-      //     "dist":true,
-      //     "frmo":true,
-      //     "stat":true,
-      //     "line":true,
-      //     // "gc":true,
-      //     // "_cs1":true,
-      //     // "_es1":true,
-      //     // "_xs1":true,
-      //     // "_fe1":true,
-      //     // "_cs2":true,
-      //     // "_es2":true,
-      //     // "_xs2":true,
-      //     // "_fe2":true
-      //   }
-      // });
-      //
-      // // get the status report and queue report
-      // self.write({sr:null});
-      //
-      // promise = promise.then(function () {
-      //   return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
-      // });
-      promise = promise.then(function () {
-        return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
-      });
-      promise = promise.then(function () {
-        return self.set({jv:4}); //Set queue report verbosity
-      });
       if (self.serialPortData === null) { // we're single channel
+        promise = promise.then(function () {
+          return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
+        });
         promise = promise.then(function () {
           return self.set({rxm:1}); // Set "packet mode"
         });
@@ -377,7 +340,7 @@ TinyG.prototype._sendLines = function() {
   }
 
   if (self.doneReading) {
-    console.log("self.doneReading: " + self.doneReading)
+    // console.log("self.doneReading: " + self.doneReading)
     if (self.lineBuffer.length === 0) {
       self.emit('doneSending');
     }
@@ -502,7 +465,7 @@ TinyG.prototype._defaultWriteCallback = function (err, results) {
   var self = this;
 
   if (err) {
-    self.emit('error', util.format("WRITE ERROR: ", err));
+    self.emit('error', new TinyGError("Write", util.format("WRITE ERROR: ", err), err));
   }
 }
 
@@ -635,8 +598,8 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
   readStream.setEncoding('utf8');
 
   readStream.on('error', function(err) {
-    console.log(err);
-    throw err;
+    // console.log(err);
+    self.emit('error', new TinyGError("ReadStream", util.format("FILE READING ERROR: ", err), err));
   });
 
   var needLines = 1; // We initially need lines
@@ -805,9 +768,6 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
     }
     else {
       self.close();
-
-      if (err)
-        callback("Fatal error!");
     }
   };
 
@@ -1065,7 +1025,8 @@ TinyG.prototype.openFirst = function (failIfMore, options) {
 
   self.list(function (err, results) {
     if (err) {
-      throw err;
+      self.emit('error', new TinyGError("OpenFirstList", "listing error", err));
+      return;
     }
 
     if (results.length == 1 || (failIfMore == false && results.length > 0)) {
@@ -1076,22 +1037,26 @@ TinyG.prototype.openFirst = function (failIfMore, options) {
         return self.open(results[0].path, _options);
       }
     } else if (results.length > 1) {
-      var errText;//("Error: Autodetect found multiple TinyGs:\n");
+      var errText = "Autodetect found multiple TinyGs.\n";//("Error: Autodetect found multiple TinyGs:\n");
 
       for (var i = 0; i < results.length; i++) {
         var item = results[i];
         if (item.dataPortPath) {
-          errText = ("Error: Autodetect found multiple TinyGs:\n\tFound command port: '%s' with data port '%s'\n", item.path, item.dataPortPath);
+          errText += util.format("\tFound command port: '%s' with data port '%s'\n", item.path, item.dataPortPath);
         } else {
-          errText = ("Error: Autodetect found multiple TinyGs:\n\tFound port: '%s'\n", item.path);
+          errText += util.format("\tFound port: '%s'\n", item.path);
         }
       }
-      throw new TinyGError(errText, results);
+      self.emit('error', new TinyGError("OpenFirst", errText, results));
     } else {
-      throw new TinyGError("Error: Autodetect found no connected TinyGs.");
+      self.emit('error', new TinyGError("OpenFirst", "Autodetect found no connected TinyGs.", {}));
     }
 
   });
+}
+
+TinyG.prototype._failedToOpen = function (err) {
+  if (_options.)
 }
 
 TinyG.prototype.stripGcode = function (gcode) {
