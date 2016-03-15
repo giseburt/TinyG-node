@@ -131,7 +131,48 @@ TinyGOpenFirstListError::
 ### Classes and Methods
 
 Class TinyG::
-  * [[sendFile]]+sendFile(_filename_or_stdin_, _done_callback_)+
+  * [[open]]`open(` _path_ `,` _options_ `)`::
+  ** Open the connection.
   ** *Returns:* _nothing_
-  ** +_filename_or_stdin_+: Either a path name (in a string) or a `readStream` object (such as `process.stdin`).
-  ** +_done_callback_+ (_optional_): A function for the TinyG object to call when the file has finished sending. This will only be called after all lines have been sent AND `stat` has gone to 3 (movement stopped), 4 (program end via `M2` or `M30`), or 6 (alarm).
+  ** `path`:
+  ** `options`:
+
+  * [[close]]`close()`::
+  ** Close the connection.
+  ** *Returns:* _nothing_
+
+  * [[write]]`write(` _value_ `)`::
+  ** Write value to the TinyG.
+  ** *Returns:* _nothing_
+  ** `value`:
+
+  * [[write]]`writeWithPromise(` _value_ `)`::
+  ** Write value to the TinyG.
+  ** *Returns:* Promise.
+  ** `value`:
+
+  * [[set]]`set(` _value_ `)`::
+  ** Set the given value on the TinyG.
+  ** *Returns:* Promise
+  ** `value`:
+
+  * [[get]]`get(` _key_ `)`::
+  ** Retrieve the value of the given key from the TinyG.
+  ** *Returns:* Promise
+  ** `key`:
+
+  * [[sendFile]]`sendFile(` _filename_or_stdin_ `,` _done_callback_ `)`::
+  ** *Returns:* _nothing_
+  ** `filename_or_stdin`: Either a path name (in a string) or a `readStream` object (such as `process.stdin`).
+  ** `done_callback` (_optional_): A function for the TinyG object to call when the file has finished sending. This will only be called after all lines have been sent AND `stat` has gone to 3 (movement stopped), 4 (program end via `M2` or `M30`), or 6 (alarm).
+
+  * [[list]]`list(` _callback_ `)`::
+  ** Get a list of TinyGs available.
+  ** *Returns:* _nothing_
+  ** `callback`:
+
+  * [[openFirst]]`openFirst(` _failIfMore_, _options_ `)`::
+  ** Get a list of TinyGs available.
+  ** *Returns:* _nothing_
+  ** `failIfMore`:
+  ** `options`:
