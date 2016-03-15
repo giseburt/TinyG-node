@@ -780,8 +780,9 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
 
 TinyG.prototype.get = function(key) {
   var self = this;
-
-  return self.set(key, null);
+  var o = {};
+  o[key] = null;
+  return self.set(o);
 };
 
 
@@ -798,7 +799,7 @@ TinyG.prototype.set = function(key, value) {
   // [{jv:1}, {qv:1}]
 
 
-  if (util.isArray(key)) {
+  if (Array.isArray(key)) {
     var promiseChain = Q.fcall(function () {}); // Create a dummy promise to start the cahin.
     for (var k in key) {
       // We have to artificially create a function context to hold the values
@@ -852,7 +853,7 @@ TinyG.prototype.set = function(key, value) {
   var deferred = Q.defer();
 
   var _respHandler = function (r) {
-    deferred.notify("got: " + util.inspect(r));
+    deferred.notify(r);
     if (key in r) {
       try {
         deferred.resolve(r[key]);

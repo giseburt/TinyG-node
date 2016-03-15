@@ -240,11 +240,12 @@ g.write(lines.split('\n'));
 [[writeWithPromise]]
 ##### writeWithPromise( _value_, _fulfilled_function_ )
   * Write value to the TinyG, returning a promise to be fulfilled when the TinyG responds.
+  * The `promise.notify(response_or_sr)` function is called with the same value that is sent to the `fulfilledFunction`, and can be monitored by adding a `progress()` handler on the promise. This is useful for updating of interfaces or such, but should not be used to replace the `fulfilledFunction`.
 +
 --
   *Returns:*:: http://documentup.com/kriskowal/q/[Q promise].
   `value`:: This is passed directly to <<write,`q.write()`>>.
-  `fullfilledFunction`::
+  `fulfilledFunction`::
   * (_Optional_.) A function that will be called with every parsed response and status report from the TinyG.
   * The function is to return `true` when that response or status report indicates that the write has completed, or `false` if it hasn't.
 
@@ -267,7 +268,7 @@ stat3_fulfilled_function = function (r) {
 //   then for the machine to go to stat 3.
 // Requires 'stat' to be in your status reports,
 //   and JSON Verbosity of 4.
-var last_line = 32;
+var last_line = 6;
 var last_line_was_seen = false;
 var last_stat_seen = -1;
 last_line_seen_fulfilled_function = function (r) {
@@ -281,40 +282,124 @@ last_line_seen_fulfilled_function = function (r) {
   return ((last_stat_seen == 3) && last_line_was_seen);
 }
 
+// Assuming some function we_are_done() exists that we want called once
+// we are done (according to fulfilled_function.)
+
+// Here are the gcode lines we wish to send
+var lines = "N1 G1 F2000\nN2 X0 Y100\nN3 X100\nN4 Y0\nN5 X0\nN6 M2"
+
+// We will use the default fulfilled_function, which waits for stat == 3 in a
+// status report.
+g.writeWithPromise(lines).finally(function() { we_are_done(); });
+
+// If we wish to capture the responses and status reports (in this case we log them)
+// we use the progress() function of the promise.
+g.writeWithPromise(lines)
+  .finally(function() { we_are_done(); })
+  .progress(function(st) {
+    console.log(util.inspect(st));
+  });
+
+// We will use the last_line_seen_fulfilled_function, then call we_are_done()
+g.writeWithPromise(lines, last_line_seen_fulfilled_function).then(function() { we_are_done(); });
+
 ----
-<1> https://github.com/synthetos/TinyG/wiki/Status-Reports[Setting up status reports]
-<2> https://github.com/synthetos/TinyG/wiki/Status-Reports#status-report-values['stat' values]
-<3> https://github.com/synthetos/TinyG/wiki/JSON-Details#response-verbosity[JSON Verbosity]
+<1> https://github.com/synthetos/TinyG/wiki/Status-Reports[Documentation on setting up status reports.]
+<2> https://github.com/synthetos/TinyG/wiki/Status-Reports#status-report-values[Documentation of `stat` values.]
+<3> https://github.com/synthetos/TinyG/wiki/JSON-Details#response-verbosity[Documentation of JSON Verbosity.]
+<4> http://documentup.com/kriskowal/q/[Documentation of Q promise handling].
 --
 
 
 [[set]]
 ##### set( _value_ )
-  * Set the given value on the TinyG.
-  *Returns:*:: Promise
+  * Set the given value on the TinyG, returning a promise that will be finished when the last value has been set on the TinyG.
+  * The `promise.notify(response)` function is called once for every parsed response object from the TinyG. These can be monitored by adding a `progress()` handler on the promise. Note that these responses are not necessarily related to the values being `set()`. No attempt at correlation is made before `notify` is called.
++
+--
+  *Returns:*:: http://documentup.com/kriskowal/q/[Q promise].
   `value`::
+  ** May be an `object` or array of `objects` (according to https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/isArray[`Array.isArray(value)`]).
+  ** If the value is an `object`, then each `key: value` pair will be individually sent (in effectively random order) to the TinyG (as JSON), and the response(s) will be waited for. The promise will be chained for each value to be set.
+  ** If the value is an array of `object` values, then each element of the array will be passed to `set()` and chained onto the same promise. This is effectively the same as calling set with an object, except you have control over the order that they are sent.
+
+[source,javascript]
+.set-example.js
+----
+// We will set xvm, yvm, and zvm to 3000, then start sending a file by calling some
+// function called "send_a_file()" (that presumably could utilize g.sendFile()).
+g.set({xvm: 3000, yvm: 3000, zvm: 3000})
+  .then(function() { send_a_file(); });
+
+// Errors can be handled with the second parameter to then, or with a catch()
+g.set({xvm: 3000, yvm: 3000, zvm: 3000})
+  .then(function() { send_a_file(); })
+  .catch(function(err) { all_is_lost(err); });
+
+
+// If we also wish to log the responses, we could add a progress handler:
+g.set({xvm: 3000, yvm: 3000, zvm: 3000})
+  .then(function() { send_a_file(); })
+  .progress(function(r) {
+    console.log(util.inspect(r));
+  });
+
+
+----
+<1> https://github.com/synthetos/TinyG/wiki/TinyG-Configuration[Explanation of `xvm`, `yvm`, and `zvm` values].
+<2> http://documentup.com/kriskowal/q/[Documentation of Q promise handling].
+--
+
+
 
 [[get]]
 ##### get( _key_ )
-  * Retrieve the value of the given key from the TinyG.
-  *Returns:*:: Promise
-  `key`::
+  * Retrieve the value of the given key from the TinyG, asynchronously. What;s returned is a promise, which will be fulfilled with the resulting value.
+  * Note that internally `get()` calls `set()`, so the response format is the same.
++
+--
+  *Returns:*:: http://documentup.com/kriskowal/q/[Q promise].
+  `key`:: The key to be retrieved as a `string`. A common example would be `'sr'` to retrieve a status report.
+
+[source,javascript]
+.get-example.js
+----
+// We will get the value of xvm, or couldnt_get_xvm() with the error returned.
+g.get("xvm")
+  .then(function(value) {
+    console.log("xvm value: " + xvm);
+  })
+  .catch(function(err) { couldnt_get_xvm(err); });
+----
+<2> http://documentup.com/kriskowal/q/[Documentation of Q promise handling].
+--
 
 [[sendFile]]
 ##### sendFile( _filename_or_stdin_ , _done_callback_ )
-  * *Returns:*:: _nothing_
+  * _TODO_
++
+--
+   * *Returns:*:: _nothing_
   `filename_or_stdin`:: Either a path name (in a string) or a `readStream` object (such as `process.stdin`).
   `done_callback`:: (_Optional._) A function for the TinyG object to call when the file has finished sending. This will only be called after all lines have been sent AND `stat` has gone to 3 (movement stopped), 4 (program end via `M2` or `M30`), or 6 (alarm).
+--
 
 [[list]]
 ##### list( _callback_ )
   * Get a list of TinyGs available.
+  * _TODO_
++
+--
   *Returns:*:: _nothing_
   `callback`::
+--
 
 [[openFirst]]
 ##### openFirst( _fail_if_more_ , _options_ )
-  * Get a list of TinyGs available.
+  * Opens the first TinyG found, passing `options` to the `open()` call.
++
+--
   *Returns*:: _nothing_
-  `fail_if_more`::
-  `options`::
+  `fail_if_more`:: If `true`, then `openFirst()` will fire an `error` event and return if it finds more than one attached TinyG.
+  `options`:: These options are assed to the `open()` call. Some value may be added or modified as needed.
+--
