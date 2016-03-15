@@ -351,6 +351,20 @@ TinyG.prototype._sendLines = function() {
   self.emit('sentLine', lastLineSent);
 }
 
+TinyG.prototype.flush = function() {
+  var self = this;
+
+  // Tell everything else that we're done sending
+  self.emit('doneSending', true);
+
+  // Wipe out the line buffer
+  self.lineBuffer.length = 0;
+
+  // Send a queue flush followed by an alarm clear
+  self._write('\x04'); // send the ^D
+  self._write("{clr:n}");
+};
+
 TinyG.prototype.close = function() {
   var self = this;
 
@@ -368,6 +382,9 @@ TinyG.prototype.close = function() {
     self.serialPortData.close();
     // self.serialPortData = null;
   }
+
+  // Empty the send buffer.
+  self.lineBuffer.length = 0;
 
   // 'close' event will set self.serialPortControl = null.
 };
@@ -461,19 +478,15 @@ TinyG.prototype.write = function(value) {
 }
 
 
-TinyG.prototype._defaultWriteCallback = function (err, results) {
-  var self = this;
-
-  if (err) {
-    self.emit('error', new TinyGError("Write", util.format("WRITE ERROR: ", err), err));
-  }
-}
-
 TinyG.prototype._write = function(value, callback) {
   var self = this;
 
   if (callback === undefined) {
-    callback = self._defaultWriteCallback;
+    callback = function(err) {
+      if (err) {
+        self.emit('error', new TinyGError("Write", util.format("WRITE ERROR: ", err), err));
+      }
+    };
   }
 
   if (self.serialPortControl === null) {
@@ -643,7 +656,6 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
           lineMatch = line.match(/^(?:[nN][0-9]+\s*)?(.*)$/);
           if (lineMatch) {
             line = 'N' + nextlineNumber.toString() + " " + lineMatch[1];
-            // self.emit('error', util.format(line));
             nextlineNumber++;
           }
           return line;
@@ -661,7 +673,6 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
 
     if (fileEnded) {
       g.setDoneReading(true);
-      // console.warn("DONE READING!!")
     }
 
     _in_readLines = false;
@@ -687,9 +698,9 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
   // 'doneSending' will only be sent after we call g.setDoneReading(true);
 
 
-  var _doDoneSending = function () {
-    if (stopOrEndStat) {
-      // _finish();
+  var _doDoneSending = function (forcedStop) {
+    if (forcedStop || (fileEnded && stopOrEndStat)) {
+      _finish();
     } else {
       doneSending = true;
     }
@@ -709,16 +720,16 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
       // 3	program stop or no more blocks (M0, M1, M60)
       // 4	program end via M2, M30
       if (sr.stat == 3 || sr.stat == 4) {
-        if (sr.stat == 4) {
-          if (!doneSending) {
-            readStream.close();
-            fileEnded = true;
-          }
-          doneSending = true;
-        }
+        // if (sr.stat == 4) {
+        //   if (!doneSending) {
+        //     readStream.close();
+        //     fileEnded = true;
+        //   }
+        //   doneSending = true;
+        // }
 
-        if (doneSending) {
-          // _finish();
+        if (fileEnded && doneSending) {
+          _finish();
         } else {
           stopOrEndStat = true;
         }
@@ -727,7 +738,7 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
       } else if (sr.stat == 2) {
         // If the machine is in error, we're done no matter what
         if (!self.timedSendsOnly) {
-          // _finish(sr);
+          _finish(sr);
         }
 
       // 6 is holding
@@ -755,6 +766,10 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
   } // _onResponse
 
   var _finish = function (err) {
+    if (!fileEnded) {
+      // We never ended, but got here somehow
+      readStream.close();
+    }
     g.removeListener('needLines', _doNeedLines);
     g.removeListener('doneSending', _doDoneSending);
     g.removeListener('statusChanged', _doStatusChanged);

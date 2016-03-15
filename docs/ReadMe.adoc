@@ -376,7 +376,9 @@ g.get("xvm")
 
 [[sendFile]]
 ##### sendFile( _filename_or_stdin_ , _done_callback_ )
-  * _TODO_
+  * Reads a file and sends it to the TinyG.
+  * Use status reports to monitor the progress of the sending.
+  * Use <<flush,`g.flush()`>> to force the file to stop sending. `done_callback` will still be called.
 +
 --
    * *Returns:*:: _nothing_
