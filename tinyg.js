@@ -1055,10 +1055,6 @@ TinyG.prototype.openFirst = function (failIfMore, options) {
   });
 }
 
-TinyG.prototype._failedToOpen = function (err) {
-  if (_options.)
-}
-
 TinyG.prototype.stripGcode = function (gcode) {
   gcode = gcode.replace(/^(.*?);\(.*$/gm, "$1");
   gcode = gcode.replace(/[ \t]/gm, "");
