@@ -1,9 +1,9 @@
-#TinyG-node
+# TinyG-node
 
 
-A commmand-line utility and library module to abstract communications and control of a TinyG.
+A library module and commmand-line utility to abstract communications and control of a [Synthetos](https://www.synthetos.com/) [TinyG](https://synthetos.myshopify.com/collections/assembled-electronics/products/tinyg) (or a device running [G2 Core](https://github.com/synthetos/g2)). Written and maintained by the Synthetos core team.
 
-#Usage as a command line utility
+# Usage as a command line utility
 
 First install the tinyg npm globally, so it'll be in your path:
 
@@ -42,7 +42,6 @@ If you wish to keep a log of the interaction between the TinyG and the `g` utili
   Progress |=========================================================______|  91%
 ```
 
-
 _Note: The `g` command line utility is still a little rough around the edges. It's still in active development, so update often!_
 
 ##`g(1)` usage
@@ -77,3 +76,5 @@ var g = new TinyG();
 ```
 
 Now you have a `g` object, you need to tell it to connect to a TinyG, then you can interact with the TinyG.
+
+See [./docs/ReadMe.adoc](./docs/ReadMe.adoc)
