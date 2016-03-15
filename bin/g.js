@@ -106,6 +106,7 @@ function log_c(x) {
 
 g.on('error', function (err) {
   log(err+'\n');
+  log(util.inspect(err.data)+'\n');
 });
 
 if (args.list) {
@@ -148,9 +149,7 @@ function parseCommand(line) {
       if (cmd.match(/^q(uit)?$/)) {
         var e = util.format("## Received QUIT command in State '%s' -- sending CTRL-D and exiting.\n", STAT_CODES[latestMotionStatus]);
         log(e);
-        if (interactive) {
-          process.stdout.write(chalk.dim(e));
-        }
+        process.stdout.write(chalk.dim(e));
         tryToQuit();
       } else if (cmd.match(/^s(end)?$/)) {
         if (sendingFile) {
@@ -158,6 +157,14 @@ function parseCommand(line) {
         } else {
           process.stdout.write(chalk.dim("Send file: " + args)+"\n");
           sendFile(args);
+        }
+      } else if (cmd.match(/^k(ill)?$/)) {
+        if (sendingFile) {
+          process.stdout.write(chalk.red("KILL: Stopping send file.")+"\n");
+          g.flush();
+          // sendFile callback will clear sendingFile for us.
+        } else {
+          process.stdout.write(chalk.dim("Cannot stop sending file: not sending a file.\n"));
         }
       }
 
@@ -194,8 +201,6 @@ function tryToQuit() {
 
 var maxLineNumber = 0;
 function sendFile(fileName) {
-  interactive = false;
-
   function startSendFile() {
     sendingFile = true;
     g.sendFile(fileName || process.stdin, function(err) {
@@ -207,14 +212,17 @@ function sendFile(fileName) {
       process.stdout.write("\n")
 
       sendingFile = false;
+      maxLineNumber = 0;
 
       // FIX THIS!!
-      if (rl !== null) {
-        rl.close();
-        // rl = null;
+      // if (rl !== null) {
+      //   rl.close();
+      //   // rl = null;
+      // }
+      // log("closing...");
+      if (!interactive) {
+        g.close();
       }
-      log("closing...");
-      g.close();
 
     });
   }
@@ -296,9 +304,10 @@ function openTinyG() {
         process.stdin.on('keypress', function (ch, k) {
           if (k && k.ctrl) {
             if (k.name == 'd') {
-              // TODO: verify that we are sending a file
-              log(util.format(">>^d\n"));
-              g.write('\x04'); // send the ^d
+              if (sendingFile) {
+                log(util.format(">>^d\n"));
+                g.write('\x04'); // send the ^d
+              }
               return;
             }
             else if (k.name == 'c') {
@@ -355,25 +364,39 @@ function openTinyG() {
             readline.clearLine(process.stdout, 0);
 
             process.stdout.write(
-              sprintf("\rPos: X=%4.2f Y=%4.2f Z=%4.2f A=%4.2f Vel:%4.2f (%s)\n",
+              sprintf("\rPos: X=%4.2f Y=%4.2f Z=%4.2f A=%4.2f Vel:%4.2f",
                 status.posx||0,
                 status.posy||0,
                 status.posz||0,
                 status.posa||0,
-                status.vel||0,
+                status.vel||0
+              )
+            );
+            if (status.he1st) {
+              process.stdout.write(
+                sprintf(" He1=%4.2fºC/%4.2fºC",
+                  status.he1t||0,
+                  status.he1st||0
+                )
+              );
+            }
+            process.stdout.write(
+              sprintf(" (%s)\n",
                 STAT_CODES[status.stat] || 'Stopped'
               )
             );
 
-            process.stdout.write(
-              util.inspect(status) + "\n"
-            );
+            if (!sendingFile) {
+              process.stdout.write(
+                JSON.stringify(status, null, 0) + "\n"
+              );
 
-            rl.prompt(true);
+              rl.prompt(true);
+            }
           }
 
 
-          if (st.line) {
+          if (st.line && sendingFile) {
             if (st.line > maxLineNumber) {
               maxLineNumber = st.line;
             }
@@ -439,6 +462,10 @@ function openTinyG() {
     g.on('data', function(data) {
       log(util.format('[[<%d]]%s\n', Date.now(), data.replace(/\n+/, '\n')));
     });
+
+    // g.on('doneSending', function(data) {
+    //   g.close();
+    // });
 
     g.on('sentRaw', function(data, channel) {
       log(util.format('[[%s%d]]%s', channel, Date.now(), data.replace(/\n+/g, '\n') ));
