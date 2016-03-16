@@ -368,7 +368,7 @@ function openTinyG() {
                 status.vel||0
               )
             );
-            if (status.he1st) {
+            if (status.he1t) {
               process.stdout.write(
                 sprintf(" He1=%4.2fºC/%4.2fºC",
                   status.he1t||0,
