@@ -99,6 +99,14 @@ function TinyG() {
               ));
             }
 
+            else if (footer[1] == 204) {
+              self.emit('error', new TinyGError(
+                "InAlarm",
+                util.format("TinyG reported COMMAND REJECTED BY ALARM '%s'", part),
+                jsObject
+              ));
+            }
+
             else if (footer[1] != 0) {
               self.emit('error', new TinyGError(
                 "Response",
@@ -950,9 +958,11 @@ TinyG.prototype.parseGcode = function(line, readFileState) {
 };
 
 TinyG.prototype.list = function(callback) {
+  var deferred = Q.defer();
+
   SerialPortModule.list(function (err, results) {
     if (err) {
-      callback(err, null);
+      deferred.reject(err);
       return;
     }
 
@@ -1024,10 +1034,12 @@ TinyG.prototype.list = function(callback) {
       // if (item.manufacturer == 'FTDI' || item.manufacturer == 'Synthetos') {
         // tinygOnlyResults.push(item);
       // }
-    }
+    } // for i in results
 
-    callback(null, tinygs);
-  })
+    deferred.resolve(tinygs);
+  }); // serialport.list callback.
+
+  return deferred.promise;
 };
 
 
@@ -1039,12 +1051,7 @@ TinyG.prototype.openFirst = function (fail_if_more, options) {
     fail_if_more = false;
   }
 
-  self.list(function (err, results) {
-    if (err) {
-      self.emit('error', new TinyGError("OpenFirstList", "listing error", err));
-      return;
-    }
-
+  self.list().then(function (results) {
     if (results.length == 1 || (fail_if_more == false && results.length > 0)) {
       if (results[0].dataPortPath) {
         _options.dataPortPath = results[0].dataPortPath;
@@ -1068,6 +1075,8 @@ TinyG.prototype.openFirst = function (fail_if_more, options) {
       self.emit('error', new TinyGError("OpenFirst", "Autodetect found no connected TinyGs.", {}));
     }
 
+  }).catch(function(err) {
+    self.emit('error', new TinyGError("OpenFirstList", "listing error", err));
   });
 }
 
