@@ -167,7 +167,7 @@ var list_results = { // see g.list() for how to get this structure
 }
 g.open(list_results.path, {dataPortPath : list_results.dataPortPath});
 ----
-<1> <<list,`g.list()`>>
+<1> See <<list,`g.list()`>>
 --
 
 [[close]]
@@ -205,7 +205,7 @@ g.write('{sr:n}\n');
 // Issue a feed hold ("pause") immediately.
 g.write('!');
 ----
-<1> <<set,`g.set()`>>
+<1> See <<set,`g.set()`>>
 --
 
   *** For objects that are not array-like:
@@ -221,7 +221,7 @@ g.write('!');
 // Note: g.set() should be used for this purpose instead!
 g.write({sr: null});
 ----
-<1> <<set,`g.set()`>>
+<1> See <<set,`g.set()`>>
 --
 
   *** For "Arrays" (objects that are array-like according to https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/isArray[`Array.isArray(value)`]):
@@ -309,10 +309,10 @@ g.writeWithPromise(lines)
 g.writeWithPromise(lines, last_line_seen_fulfilled_function).then(function() { we_are_done(); });
 
 ----
-<1> https://github.com/synthetos/TinyG/wiki/Status-Reports[Documentation on setting up status reports.]
-<2> https://github.com/synthetos/TinyG/wiki/Status-Reports#status-report-values[Documentation of `stat` values.]
-<3> https://github.com/synthetos/TinyG/wiki/JSON-Details#response-verbosity[Documentation of JSON Verbosity.]
-<4> http://documentup.com/kriskowal/q/[Documentation of Q promise handling].
+<1> See https://github.com/synthetos/TinyG/wiki/Status-Reports[documentation on setting up status reports.]
+<2> See https://github.com/synthetos/TinyG/wiki/Status-Reports#status-report-values[documentation of `stat` values.]
+<3> See https://github.com/synthetos/TinyG/wiki/JSON-Details#response-verbosity[documentation of JSON Verbosity.]
+<4> See http://documentup.com/kriskowal/q/[documentation of Q promise handling].
 --
 
 
@@ -351,8 +351,8 @@ g.set({xvm: 3000, yvm: 3000, zvm: 3000})
 
 
 ----
-<1> https://github.com/synthetos/TinyG/wiki/TinyG-Configuration[Explanation of `xvm`, `yvm`, and `zvm` values].
-<2> http://documentup.com/kriskowal/q/[Documentation of Q promise handling].
+<1> See https://github.com/synthetos/TinyG/wiki/TinyG-Configuration[explanation of `xvm`, `yvm`, and `zvm` values].
+<2> See http://documentup.com/kriskowal/q/[documentation of Q promise handling].
 --
 
 
@@ -376,7 +376,7 @@ g.get("xvm")
   })
   .catch(function(err) { couldnt_get_xvm(err); });
 ----
-<2> http://documentup.com/kriskowal/q/[Documentation of Q promise handling].
+<1> See http://documentup.com/kriskowal/q/[documentation of Q promise handling].
 --
 
 [[sendFile]]
