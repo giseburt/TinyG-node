@@ -2,7 +2,6 @@ var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 var fs = require('fs');
 var Q = require('q');
-var RJSON = require("relaxed-json");
 var SerialPortModule = require("serialport"),
     SerialPort = SerialPortModule.SerialPort;
 
@@ -65,7 +64,7 @@ function TinyG() {
 
       if (part[0] == "{" /* make the IDE happy: } */) {
         try {
-          jsObject = RJSON.parse(part);
+          jsObject = JSON.parse(part);
         } catch(err) {
           self.emit('error', new TinyGError("Parser", util.format('Unable to parse "%s": %s', part, err), {err: err, part: part}));
           return;

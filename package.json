@@ -20,7 +20,6 @@
     "chalk": "^0.5.1",
     "nomnom": "^1.8.0",
     "q": "^1.1.2",
-    "relaxed-json": "^0.2.8",
     "serialport": "^2.0.6",
     "sprintf": "^0.1.4"
   },
