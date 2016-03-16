@@ -59,7 +59,7 @@ function TinyG() {
       part = part.replace(/([\x13\x11])/, "");
 
       // Mark everything else with a bullet
-      // console.log('part: ' + part.replace(/([\x00-\x20])/, "•"));
+      console.log('part: ' + part.replace(/([\x00-\x20])/, "•"));
 
       self.emit('data', part);
 
@@ -176,17 +176,20 @@ TinyG.prototype.open = function (path, options) {
 
   // console.log(util.inspect(options));
   self.dataPortPath = options.dataPortPath;
-  self.serialPortControl = new SerialPort(path, options);
   self.timedSendsOnly = options.timedSendsOnly;
+
+  self.serialPortControl = new SerialPort(path, options);
 
   var _onControlData = function(data) {
     self.emit('data', data);
   };
+  self.serialPortControl.on('data', _onControlData);
 
-  self.serialPortControl.once('open', function () {
-    self.serialPortControl.on('data', _onControlData);
-
-    self._open_second_channel(!options.dontSetup);
+  self.serialPortControl.on('open', function () {
+    console.error("OPENED "+path);
+    process.nextTick(function() {
+      self._open_second_channel(!options.dontSetup);
+    });
   });
 
   var _onControlError = function(err) {
@@ -195,7 +198,8 @@ TinyG.prototype.open = function (path, options) {
 
   self.serialPortControl.on('error', _onControlError);
 
-  self.serialPortControl.once('close', function(err) {
+  self.serialPortControl.on('close', function(err) {
+    console.error("CLOSED "+path);
     self.serialPortControl.removeListener('data', _onControlData);
     self.serialPortControl.removeListener('error', _onControlError);
     self.serialPortControl = null;
@@ -214,10 +218,11 @@ TinyG.prototype._open_second_channel = function (doSetup) {
       // The data channel should never get data back.
       self.emit('data', data);
     };
+    self.serialPortData.on('data', _dataOnData);
 
-    self.serialPortData.once('open', function () {
-      self.serialPortData.on('data', _dataOnData);
-      self._complete_open(doSetup)
+    self.serialPortData.on('open', function () {
+      console.error("OPENED2 "+self.dataPortPath);
+      self._complete_open(doSetup);
     });
 
     var _onDataError = function(err) {
@@ -226,47 +231,23 @@ TinyG.prototype._open_second_channel = function (doSetup) {
 
     self.serialPortData.on('error', _onDataError);
 
-    self.serialPortData.once("close", function(err) {
+    self.serialPortData.on("close", function(err) {
+      console.error("CLOSED "+self.dataPortPath);
       self.serialPortData.removeListener('data', _dataOnData);
       self.serialPortData.removeListener('error', _onDataError);
       self.serialPortData = null;
     });
   } else {
-    process.nextTick(function() {
-      self.serialPortData = null;
-      self._complete_open(doSetup)
-    });
+    self.serialPortData = null;
+    self._complete_open(doSetup)
   }
 };
 
 TinyG.prototype._complete_open = function (doSetup) {
   var self = this;
+  self.linesRequested = 5;
 
-  if (doSetup) {
-    process.nextTick(function() {
-      var promise = self.set({jv:4}); //Set JSON verbosity to 2 (medium)
-      if (self.serialPortData === null) { // we're single channel
-        promise = promise.then(function () {
-          return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
-        });
-        promise = promise.then(function () {
-          return self.set({rxm:1}); // Set "packet mode"
-        });
-      }
-      promise = promise.then(function () {
-        self.emit('open');
-      });
-    });
-  } else {
-    self.emit('open');
-  }
-
-  if (self.serialPortData === null) {
-    self.write({rx:null});
-  } else if (!self.timedSendsOnly) {
-    self.linesRequested = 5;
-  }
-
+  // Prepare the event listeners
   var _onResponse = function(r) {
     if (r.hasOwnProperty("rx") && self.serialPortData === null) {
       self.ignoredResponses--;
@@ -328,6 +309,28 @@ TinyG.prototype._complete_open = function (doSetup) {
     self.removeListener('response', _onResponse);
     self.removeListener('statusChanged', _onStatusChanged);
   });
+
+  // Now do setup
+  if (doSetup) {
+    process.nextTick(function() {
+      self.emit('open');
+      var promise = self.set({jv:4}); //Set JSON verbosity to 2 (medium)
+      if (self.serialPortData === null) { // we're single channel
+        promise = promise.then(function () {
+          return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
+        });
+        promise = promise.then(function () {
+          return self.set({rxm:1}); // Set "packet mode"
+        });
+      }
+      promise = promise.finally(function () {
+        self.emit('setupDone');
+      });
+    });
+  } else {
+    self.emit('open');
+    self.emit('setupDone');
+  }
 };
 
 // Internal use only, but persistent
@@ -831,7 +834,8 @@ TinyG.prototype.set = function(key, value) {
         promiseChain = promiseChain.then(function() {
           return self.set(v);
         }).catch(function (e) {
-          console.log("Caught error setting ", v, ": ", e);
+          //console.log("Caught error setting ", v, ": ", e);
+          self.emit('error', e);
           return Q.fcall(function () {});
         });
       };
@@ -848,7 +852,8 @@ TinyG.prototype.set = function(key, value) {
         promiseChain = promiseChain.then(function() {
           return self.set(k, v);
         }).catch(function (e) {
-          console.log("Caught error setting {", k, ":", v, "}: ", e);
+          // console.log("Caught error setting {", k, ":", v, "}: ", e);
+          self.emit('error', e);
           return Q.fcall(function () {});
         });
       };
