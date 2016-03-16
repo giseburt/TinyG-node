@@ -185,7 +185,7 @@ TinyG.prototype.open = function (path, options) {
   self.serialPortControl.on('data', _onControlData);
 
   self.serialPortControl.once('open', function () {
-    console.error("OPENED "+path);
+    // console.error("OPENED "+path);
     process.nextTick(function() {
       self._open_second_channel(!options.dontSetup);
     });
@@ -198,7 +198,7 @@ TinyG.prototype.open = function (path, options) {
   self.serialPortControl.on('error', _onControlError);
 
   self.serialPortControl.once('close', function(err) {
-    console.error("CLOSED "+path);
+    // console.error("CLOSED "+path);
     self.serialPortControl.removeListener('data', _onControlData);
     self.serialPortControl.removeListener('error', _onControlError);
     self.serialPortControl = null;
@@ -220,7 +220,7 @@ TinyG.prototype._open_second_channel = function (doSetup) {
     self.serialPortData.on('data', _dataOnData);
 
     self.serialPortData.once('open', function () {
-      console.error("OPENED2 "+self.dataPortPath);
+      // console.error("OPENED2 "+self.dataPortPath);
       self._complete_open(doSetup);
     });
 
@@ -231,7 +231,7 @@ TinyG.prototype._open_second_channel = function (doSetup) {
     self.serialPortData.on('error', _onDataError);
 
     self.serialPortData.once("close", function(err) {
-      console.error("CLOSED "+self.dataPortPath);
+      // console.error("CLOSED "+self.dataPortPath);
       self.serialPortData.removeListener('data', _dataOnData);
       self.serialPortData.removeListener('error', _onDataError);
       self.serialPortData = null;
@@ -342,6 +342,8 @@ TinyG.prototype._complete_open = function (doSetup) {
 
       // Allow data to be sent. We'll start with 5 lines to fill the buffer.
       self.linesRequested = 5;
+
+      // console.error("DONE");
     });
   }); // nextTick
 
