@@ -389,6 +389,8 @@ g.get("xvm")
    * *Returns:*:: _nothing_
   `filename_or_stdin`:: Either a path name (in a string) or a `readStream` object (such as `process.stdin`).
   `done_callback`:: (_Optional._) A function for the TinyG object to call when the file has finished sending. This will only be called after all lines have been sent AND `stat` has gone to 3 (movement stopped), 4 (program end via `M2` or `M30`), or 6 (alarm).
+
+WARNING: If `done_callback` is not provided, then when the file is done sending the connection to the TinyG *will be closed* (via <<close,`g.close()`>>).
 --
 
 [[flush]]
