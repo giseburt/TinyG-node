@@ -110,11 +110,7 @@ g.on('error', function (err) {
 });
 
 if (args.list) {
-  g.list(function (err, results) {
-    if (err) {
-      throw err;
-    }
-
+  g.list().then(function (results) {
     var gs = [];
 
     for (var i = 0; i < results.length; i++) {
@@ -126,7 +122,7 @@ if (args.list) {
       noTinygFound();
       process.exit(0);
     }
-  });
+  }).catch(function (e) { throw e; });
 } else {
   openTinyG();
 }
