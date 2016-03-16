@@ -59,7 +59,7 @@ function TinyG() {
       part = part.replace(/([\x13\x11])/, "");
 
       // Mark everything else with a bullet
-      console.log('part: ' + part.replace(/([\x00-\x20])/, "•"));
+      // console.log('part: ' + part.replace(/([\x00-\x20])/, "•"));
 
       self.emit('data', part);
 
