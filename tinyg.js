@@ -999,7 +999,25 @@ TinyG.prototype.list = function(callback) {
 
       if (process.platform === 'win32') {
         // Windows:
-        // TBD
+        // pnpId: USB\VID_1D50&PID_606D&MI_00\6&3B3CEA53&0&0000
+        // pnpId: USB\VID_1D50&PID_606D&MI_02\6&3B3CEA53&0&0002
+
+        // WARNING -- explicit test against VIP/PID combo.
+        if ((x = item.pnpId.match(/^USB\\VID_([0-9A-Fa-f]+)&PID_([0-9A-Fa-f]+)&MI_([0-9]+)\\(.*)$/)) && (x[1] == '1D50') && (x[2] == '606D')) {
+          var vendor = x[1];
+          var pid = x[2];
+          var if = x[3];
+          var theRest = x[4].split('&');
+          var serialNumber = theRest[1];
+
+          if ((tinygs.length > 0) && (tinygs[tinygs.length-1].serialNumber == serialNumber)) {
+            tinygs[tinygs.length-1].dataPortPath = item.comName;
+            continue;
+          }
+
+          tinygs.push({path: item.comName, pnpId: item.pnpId, serialNumber: serialNumber});
+        }
+
       } else if (process.platform === 'darwin') {
         // MacOS X:
         //  Command:
