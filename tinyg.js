@@ -37,6 +37,7 @@ function TinyG() {
   self.linesSent = 0;      // number of lines that have been sent
   self.lineInLastSR = 0;
   self.ignoredResponses = 0; // Keep track of out-of-band commands to ignore responses to
+  self.setupDone = false;
 
   var readBuffer = "";
   var _tinygParser = function (emitter, buffer) {
@@ -338,12 +339,12 @@ TinyG.prototype._complete_open = function (doSetup) {
     } // if doSetup
 
     setupPromise = setupPromise.then(function () {
+      self.setupDone = true;
       self.emit('setupDone');
 
       // Allow data to be sent. We'll start with 5 lines to fill the buffer.
       self.linesRequested = 5;
-
-      // console.error("DONE");
+      self._sendLines();
     });
   }); // nextTick
 
@@ -387,6 +388,9 @@ TinyG.prototype.flush = function() {
   // Wipe out the line buffer
   self.lineBuffer.length = 0;
 
+  // Reset line requested
+  self.linesRequested = 5;
+
   // Send a queue flush followed by an alarm clear
   self._write('\x04'); // send the ^D
   self._write("{clr:n}");
@@ -412,6 +416,7 @@ TinyG.prototype.close = function() {
 
   // Empty the send buffer.
   self.lineBuffer.length = 0;
+  self.setupDone = false;
 
   // 'close' event will set self.serialPortControl = null.
 };
