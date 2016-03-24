@@ -1006,7 +1006,6 @@ TinyG.prototype.list = function(callback) {
         if ((x = item.pnpId.match(/^USB\\VID_([0-9A-Fa-f]+)&PID_([0-9A-Fa-f]+)&MI_([0-9]+)\\(.*)$/)) && (x[1] == '1D50') && (x[2] == '606D')) {
           var vendor = x[1];
           var pid = x[2];
-          var if = x[3];
           var theRest = x[4].split('&');
           var serialNumber = theRest[1];
 
