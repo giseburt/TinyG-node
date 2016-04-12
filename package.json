@@ -1,6 +1,6 @@
 {
   "name": "tinyg",
-  "version": "0.4.02",
+  "version": "0.4.03",
   "description": "Node module for controlling TinyG.",
   "main": "tinyg.js",
   "scripts": {
