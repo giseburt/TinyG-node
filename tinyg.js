@@ -485,7 +485,7 @@ TinyG.prototype.write = function(value) {
   }
 
   // Specials bypass the buffer! Except when using timed sends...
-  else if ((typeof value !== "string" || value.match(/^[{}!~%\x03\x04]$/))) {
+  else if ((typeof value !== "string" || value.match(/^([!~%\x03\x04]|{.*})+/))) {
     // if (typeof value === "string" && value.match(/^%$/)) {
     //   if (!self.inHold) {
     //     // If we get a % by itself, and we're NOT in hold, it's a comment,
@@ -494,7 +494,7 @@ TinyG.prototype.write = function(value) {
     //   }
     // }
     // We don't get a response for single-character codes, so don't ignore them...
-    if (typeof value !== "string" || !value.match(/^[!~%\x03\x04]$/)) {
+    if (typeof value !== "string" || !value.match(/^[!~%\x03\x04]+$/)) {
       self.ignoredResponses++;
     }
     self._write(value);
