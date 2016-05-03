@@ -328,14 +328,14 @@ TinyG.prototype._complete_open = function (doSetup) {
         self.write({clr:null});
         return self.set({jv:4}); //Set JSON verbosity to 2 (medium)
       });
-      if (self.serialPortData === null) { // we're single channel
-        setupPromise = setupPromise.then(function () {
-          return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
-        });
-        setupPromise = setupPromise.then(function () {
-          return self.set({rxm:1}); // Set "packet mode"
-        });
-      }
+      // if (self.serialPortData === null) { // we're single channel
+      //   setupPromise = setupPromise.then(function () {
+      //     return self.set({ex:2}); //Set flow control to 1: XON, 2: RTS/CTS
+      //   });
+      //   setupPromise = setupPromise.then(function () {
+      //     return self.set({rxm:1}); // Set "packet mode"
+      //   });
+      // }
     } // if doSetup
 
     setupPromise = setupPromise.then(function () {
