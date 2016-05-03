@@ -241,7 +241,7 @@ TinyG.prototype._open_second_channel = function (doSetup) {
     self.serialPortData = null;
     self._complete_open(doSetup)
   }
-};
+}; // _open_second_channel
 
 TinyG.prototype._complete_open = function (doSetup) {
   var self = this;
@@ -324,6 +324,9 @@ TinyG.prototype._complete_open = function (doSetup) {
   process.nextTick(function() {
     self.emit('open');
     if (doSetup) {
+      // Poke it to get a response
+      self.write({sr:null});
+
       setupPromise = setupPromise.delay(5).then(function() {
         self.write({clr:null});
         return self.set({jv:4}); //Set JSON verbosity to 2 (medium)
