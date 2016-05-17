@@ -763,10 +763,10 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
         //   doneSending = true;
         // }
 
+        stopOrEndStat = true;
+
         if (fileEnded && doneSending) {
           _finish();
-        } else {
-          stopOrEndStat = true;
         }
 
       // 2	machine is in alarm state (shut down)
