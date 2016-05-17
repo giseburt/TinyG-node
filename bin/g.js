@@ -196,7 +196,11 @@ function tryToQuit() {
 }
 
 var maxLineNumber = 0;
-function sendFile(fileName) {
+function sendFile(fileName, exitWhenDone) {
+  if (exitWhenDone == null) {
+    exitWhenDone = false;
+  }
+
   function startSendFile() {
     sendingFile = true;
     g.sendFile(fileName || process.stdin, function(err) {
@@ -210,16 +214,15 @@ function sendFile(fileName) {
       sendingFile = false;
       maxLineNumber = 0;
 
-      // FIX THIS!!
-      // if (rl !== null) {
-      //   rl.close();
-      //   // rl = null;
-      // }
       // log("closing...");
-      if (!interactive) {
-        g.close();
-      }
+      if (exitWhenDone == true) {
+        if (rl !== null) {
+          rl.close();
+          rl = null;
 
+          g.close();
+        }
+      }
     });
   }
 
@@ -439,7 +442,7 @@ function openTinyG() {
       }
 
       if (args.gcode || !process.stdin.isTTY) {
-        sendFile(args.gcode || process.stdin);
+        sendFile(args.gcode || process.stdin, true);
       }
     }
 
