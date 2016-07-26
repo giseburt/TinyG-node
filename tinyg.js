@@ -2,9 +2,7 @@ var EventEmitter = require('events').EventEmitter;
 var util = require('util');
 var fs = require('fs');
 var Q = require('q');
-var SerialPortModule = require("serialport"),
-    SerialPort = SerialPortModule.SerialPort;
-
+var SerialPort = require('serialport');
 
 /**** Create the TinyGError object ****/
 
@@ -755,18 +753,11 @@ TinyG.prototype.sendFile = function(filename_or_stdin, callback) {
       // 3	program stop or no more blocks (M0, M1, M60)
       // 4	program end via M2, M30
       if (sr.stat == 3 || sr.stat == 4) {
-        // if (sr.stat == 4) {
-        //   if (!doneSending) {
-        //     readStream.close();
-        //     fileEnded = true;
-        //   }
-        //   doneSending = true;
-        // }
-
-        stopOrEndStat = true;
-
-        if (fileEnded && doneSending) {
-          _finish();
+        if (sr.stat == 4) {
+          if (fileEnded && doneSending) {
+            _finish();
+          }
+          stopOrEndStat = true;
         }
 
       // 2	machine is in alarm state (shut down)
@@ -989,7 +980,7 @@ TinyG.prototype.parseGcode = function(line, readFileState) {
 TinyG.prototype.list = function(callback) {
   var deferred = Q.defer();
 
-  SerialPortModule.list(function (err, results) {
+  SerialPort.list(function (err, results) {
     if (err) {
       deferred.reject(err);
       return;
