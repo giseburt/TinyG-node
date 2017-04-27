@@ -1,6 +1,6 @@
 # TinyG-node
 
-** NOTICE ** This module has been renamed `g2core-api` and the `tinyg` npm module has been deprecated. Please use `g2core-api` instead.
+**NOTICE** This module has been renamed `g2core-api` and the `tinyg` npm module has been deprecated. Please use [`g2core-api`](https://www.npmjs.com/package/g2core-api) instead.
 
 A library module and commmand-line utility to abstract communications and control of a [Synthetos](https://www.synthetos.com/) [TinyG](https://synthetos.myshopify.com/collections/assembled-electronics/products/tinyg) (or a device running [G2 Core](https://github.com/synthetos/g2)). Written and maintained by the Synthetos core team.
 
